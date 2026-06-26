@@ -104,26 +104,25 @@ async function callWithRetry(messages: ChatMessage[], maxTokens: number): Promis
   if (isCircuitOpen()) throw new Error('Circuit open')
 
   let lastError: Error | null = null
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const completion = await getClient().chat.completions.create({
         model: 'gemini-2.5-flash',
         messages,
         max_tokens: maxTokens,
-      })
+      }, { timeout: 5000 })
       recordSuccess()
       return completion.choices[0]?.message?.content ?? ''
     } catch (err) {
       lastError = err as Error
-      console.warn(`[ai] Intento ${attempt + 1}/3 falló:`, lastError.message)
-      if ((err as { status?: number }).status === 429) {
-        const delay = Math.pow(2, attempt) * 1000
-        await new Promise(r => setTimeout(r, delay))
+      if (attempt < 1) console.warn(`[ai] Intento ${attempt + 1}/2 falló:`, lastError.message)
+      if ((err as { status?: number }).status === 429 && attempt === 0) {
+        await new Promise(r => setTimeout(r, 2000))
       }
     }
   }
   recordFailure()
-  throw lastError ?? new Error('Todas las llamadas a Gemini fallaron')
+  throw lastError ?? new Error('Gemini no disponible')
 }
 
 export const ai = {

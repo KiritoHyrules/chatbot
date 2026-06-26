@@ -20,32 +20,43 @@ export const welcomeFlow = addKeyword(EVENTS.WELCOME)
   })
   .addAction({ capture: true, idle: 120000 }, async (ctx, { gotoFlow, flowDynamic, endFlow, extensions }) => {
     const option = ctx.body?.trim() ?? ''
+    const text = option.toLowerCase()
 
-    if (option === '1') {
+    const mod = extensions.moderation?.check(option)
+    if (mod?.blocked) {
+      await flowDynamic([{ body: mod.response!, delay: rnd() }])
+      return
+    }
+
+    const isPrograms = option === '1' || text.includes('programa') || text.includes('curso') || text.includes('diplomado') || text.includes('catálogo') || text.includes('catalogo') || text.includes('ver') && text.length < 15
+    const isFaq = option === '2' || text.includes('duda') || text.includes('pregunta') || text.includes('consulta') || text.includes('saber')
+    const isHandoff = option === '3' || text.includes('asesor') || text.includes('hablar') || text.includes('contactar') || text.includes('persona') || text.includes('humano')
+
+    if (isPrograms) {
       extensions.ai?.clearHistory(ctx.from)
       const { programsFlow } = await import('./programs.flow.js')
       return gotoFlow(programsFlow)
     }
-    if (option === '2') {
+    if (isFaq) {
       extensions.ai?.clearHistory(ctx.from)
       const { faqFlow } = await import('./faq.flow.js')
       return gotoFlow(faqFlow)
     }
-    if (option === '3') {
+    if (isHandoff) {
       extensions.ai?.clearHistory(ctx.from)
       const { handoffFlow } = await import('./handoff.flow.js')
       return gotoFlow(handoffFlow)
     }
-    if (option === 'cancelar' || option === 'salir') {
-      return endFlow('Gracias por visitarnos. Cuando necesites algo, escribe *hola*.')
+    if (text === 'cancelar' || text === 'salir') {
+      return endFlow('Gracias por visitarnos. Cuando necesites algo, escribe cualquier mensaje.')
     }
 
     let reply: string | undefined
     try {
       reply = await extensions.ai?.chat(ctx.from, option,
-        'El usuario no seleccionó una opción válida (1, 2, 3). Responde de forma amable, recuérdale las opciones y pídele que elija un número.')
+        'El usuario no seleccionó una opción clara. Respóndele de forma amable, recuérdale que puede ver programas, hacer consultas o hablar con un asesor. Pídele que elija una de estas opciones.')
     } catch {
       console.warn('[welcome] Gemini falló en reintento')
     }
-    await flowDynamic([{ body: reply ?? 'Responde *1*, *2* o *3* por favor.', delay: rnd() }])
+    await flowDynamic([{ body: reply ?? 'Puedes: *1* Ver programas, *2* Hacer una consulta, o *3* Hablar con un asesor. ¿Qué prefieres?', delay: rnd() }])
   })
