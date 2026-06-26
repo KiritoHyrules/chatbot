@@ -3,7 +3,7 @@ import { leads } from '../services/store.js'
 import { outbox } from '../services/store.js'
 import { classify } from '../services/classifier.js'
 import type { ClassificationResult } from '../services/classifier.js'
-import { rnd } from '../utils.js'
+import { rnd, splitResponse, delayBetween } from '../utils.js'
 
 export const leadCaptureFlow = addKeyword(utils.setEvent('EVENT_LEAD_CAPTURE'))
   .addAction(async (ctx, { flowDynamic, extensions }) => {
@@ -110,7 +110,10 @@ export const leadCaptureFlow = addKeyword(utils.setEvent('EVENT_LEAD_CAPTURE'))
     try {
       const msg = await extensions.ai?.chat(ctx.from,
         `El usuario completó el registro con estos datos: ${summary}. Confírmale que sus datos se registraron, agradécele y dile que un asesor lo contactará pronto.`)
-      await flowDynamic([{ body: msg ?? `*Datos registrados exitosamente*\nUn asesor del CEE se pondrá en contacto contigo pronto.`, delay: rnd() }])
+      const parts = splitResponse(msg ?? `*Datos registrados exitosamente*\nUn asesor del CEE se pondrá en contacto contigo pronto.`)
+      for (let i = 0; i < parts.length; i++) {
+        await flowDynamic([{ body: parts[i], delay: i > 0 ? delayBetween() : rnd() }])
+      }
     } catch {
       await flowDynamic([{ body: `*Datos registrados exitosamente*\nUn asesor del CEE se pondrá en contacto contigo pronto.`, delay: rnd() }])
     }

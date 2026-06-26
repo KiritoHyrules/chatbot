@@ -1,5 +1,5 @@
 import { addKeyword } from '@builderbot/bot'
-import { rnd } from '../utils.js'
+import { rnd, splitResponse, delayBetween } from '../utils.js'
 
 export const cancelFlow = addKeyword(['cancelar', 'salir'])
   .addAction(async (ctx, { flowDynamic, endFlow, extensions }) => {
@@ -8,6 +8,9 @@ export const cancelFlow = addKeyword(['cancelar', 'salir'])
       msg = await extensions.ai?.chat(ctx.from,
         'El usuario quiere cancelar o salir del menú actual. Despídete brevemente e invítalo a escribir *hola* cuando necesite algo.')
     } catch { /* fallback abajo */ }
-    await flowDynamic([{ body: msg ?? extensions.templates?.get('goodbye') ?? 'Has salido del menú. Escribe *hola* cuando necesites algo.', delay: rnd() }])
+    const parts = splitResponse(msg ?? extensions.templates?.get('goodbye') ?? 'Has salido del menú. Escribe *hola* cuando necesites algo.')
+    for (let i = 0; i < parts.length; i++) {
+      await flowDynamic([{ body: parts[i], delay: i > 0 ? delayBetween() : rnd() }])
+    }
     return endFlow()
   })

@@ -169,23 +169,20 @@ const TEMPLATES: Record<string, string[]> = {
   ],
 }
 
+const lastUsed: Record<string, number> = {}
+
 export const templates = {
   get(scenario: string, vars?: Record<string, string>): string {
-    const options = TEMPLATES[scenario]
-    if (!options || options.length === 0) {
-      const fallbacks = TEMPLATES['fallback']
-      return fallbacks[Math.floor(Math.random() * fallbacks.length)]
-    }
-
-    const index = rnd() % options.length
-    let result = options[index]
-
+    const options = TEMPLATES[scenario] ?? TEMPLATES['fallback']
+    const available = options
+      .map((_, i) => i)
+      .filter(i => options.length < 2 || i !== lastUsed[scenario])
+    const idx = available[Math.floor(Math.random() * available.length)]
+    lastUsed[scenario] = idx
+    let result = options[idx]
     if (vars) {
-      for (const [key, value] of Object.entries(vars)) {
-        result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value)
-      }
+      result = result.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`)
     }
-
     return result
   },
 }

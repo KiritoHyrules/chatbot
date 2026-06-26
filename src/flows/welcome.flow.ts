@@ -1,5 +1,5 @@
 import { addKeyword, EVENTS } from '@builderbot/bot'
-import { rnd } from '../utils.js'
+import { rnd, splitResponse, delayBetween } from '../utils.js'
 
 export const welcomeFlow = addKeyword(EVENTS.WELCOME)
   .addAction(async (ctx, { flowDynamic, extensions }) => {
@@ -58,5 +58,8 @@ export const welcomeFlow = addKeyword(EVENTS.WELCOME)
     } catch {
       console.warn('[welcome] Gemini falló en reintento')
     }
-    await flowDynamic([{ body: reply ?? 'Puedes: *1* Ver programas, *2* Hacer una consulta, o *3* Hablar con un asesor. ¿Qué prefieres?', delay: rnd() }])
+    const parts = splitResponse(reply ?? 'Puedes: *1* Ver programas, *2* Hacer una consulta, o *3* Hablar con un asesor. ¿Qué prefieres?')
+    for (let i = 0; i < parts.length; i++) {
+      await flowDynamic([{ body: parts[i], delay: i > 0 ? delayBetween() : rnd() }])
+    }
   })

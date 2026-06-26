@@ -1,3 +1,14 @@
+import Fuse from 'fuse.js'
+
+const programNames = ['Diplomado en Gestión de Proyectos', 'Diplomado en Ciencia de Datos', 'PEE en Transformación Digital', 'PEE en Ciberseguridad', 'Curso Taller de Power BI']
+
+const fuse = new Fuse(programNames, { threshold: 0.4 })
+
+export function findProgram(query: string): string | null {
+  const result = fuse.search(query)
+  return result.length > 0 ? result[0].item : null
+}
+
 export const knowledge = {
   programs: {
     'Diplomado en Gestión de Proyectos': {

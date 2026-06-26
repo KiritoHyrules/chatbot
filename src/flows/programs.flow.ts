@@ -1,8 +1,8 @@
 import { addKeyword } from '@builderbot/bot'
 import { join } from 'node:path'
 import { programs } from '../data/programs.js'
-import { findAnswer } from '../data/knowledge.js'
-import { rnd } from '../utils.js'
+import { findAnswer, findProgram } from '../data/knowledge.js'
+import { rnd, splitResponse, delayBetween } from '../utils.js'
 
 function reorderPrograms(userMessage: string) {
   const q = userMessage.toLowerCase()
@@ -39,7 +39,10 @@ export const programsFlow = addKeyword(['programas', 'cursos', 'diplomados', 'pe
       console.warn('[programs] Gemini falló en intro')
     }
 
-    await flowDynamic([{ body: intro ?? list, delay: rnd() }])
+    const parts = splitResponse(intro ?? list)
+    for (let i = 0; i < parts.length; i++) {
+      await flowDynamic([{ body: parts[i], delay: i > 0 ? delayBetween() : rnd() }])
+    }
   })
   .addAction({ capture: true, idle: 120000 }, async (ctx, { flowDynamic, fallBack, endFlow, state, extensions }) => {
     const option = ctx.body?.trim() ?? ''
@@ -48,7 +51,13 @@ export const programsFlow = addKeyword(['programas', 'cursos', 'diplomados', 'pe
       return endFlow('Escribe *hola* cuando desees retomar.')
     }
 
-    const index = parseInt(option, 10)
+    let index = parseInt(option, 10)
+    if (isNaN(index) || index < 1 || index > programs.length) {
+      const fuzzyName = findProgram(option)
+      if (fuzzyName) {
+        index = programs.findIndex(p => p.name === fuzzyName) + 1
+      }
+    }
     if (isNaN(index) || index < 1 || index > programs.length) {
       let retry: string | undefined
       try {
@@ -70,7 +79,10 @@ export const programsFlow = addKeyword(['programas', 'cursos', 'diplomados', 'pe
       console.warn('[programs] Gemini falló en detalle')
     }
 
-    await flowDynamic([{ body: detail ?? program.description, delay: rnd() }])
+    const detailParts = splitResponse(detail ?? program.description)
+    for (let i = 0; i < detailParts.length; i++) {
+      await flowDynamic([{ body: detailParts[i], delay: i > 0 ? delayBetween() : rnd() }])
+    }
 
     if (program.brochureFile) {
       await flowDynamic([{ body: 'Aquí tienes el brochure.', delay: rnd(), media: join(process.cwd(), 'public', 'brochures', program.brochureFile) }])

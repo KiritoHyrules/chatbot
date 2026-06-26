@@ -1,60 +1,72 @@
 import { addKeyword } from '@builderbot/bot'
 import { programs } from '../data/programs.js'
-import { findAnswer } from '../data/knowledge.js'
-import { rnd } from '../utils.js'
+import { findAnswer, findProgram } from '../data/knowledge.js'
+import { rnd, splitResponse, delayBetween } from '../utils.js'
+
+const PROGRAM_KEYWORDS: [string, string][] = [
+  ['sistemas', 'PEE en Ciberseguridad'],
+  ['industrial', 'PEE en Transformación Digital'],
+  ['datos', 'Diplomado en Ciencia de Datos'],
+  ['ciencia', 'Diplomado en Ciencia de Datos'],
+  ['proyectos', 'Diplomado en Gestión de Proyectos'],
+  ['gestión', 'Diplomado en Gestión de Proyectos'],
+  ['ciberseguridad', 'PEE en Ciberseguridad'],
+  ['seguridad', 'PEE en Ciberseguridad'],
+  ['digital', 'PEE en Transformación Digital'],
+  ['transformación', 'PEE en Transformación Digital'],
+  ['power bi', 'Curso Taller de Power BI'],
+  ['powerbi', 'Curso Taller de Power BI'],
+  ['prácticas', 'Diplomado en Ciencia de Datos'],
+  ['practicas', 'Diplomado en Ciencia de Datos'],
+  ['python', 'Diplomado en Ciencia de Datos'],
+  ['machine learning', 'Diplomado en Ciencia de Datos'],
+  ['machine', 'Diplomado en Ciencia de Datos'],
+  ['hacking', 'PEE en Ciberseguridad'],
+  ['ético', 'PEE en Ciberseguridad'],
+  ['iso', 'PEE en Ciberseguridad'],
+  ['dax', 'Curso Taller de Power BI'],
+  ['dashboard', 'Curso Taller de Power BI'],
+  ['visualización', 'Curso Taller de Power BI'],
+  ['pmbok', 'Diplomado en Gestión de Proyectos'],
+  ['ágil', 'Diplomado en Gestión de Proyectos'],
+  ['agil', 'Diplomado en Gestión de Proyectos'],
+  ['scrum', 'Diplomado en Gestión de Proyectos'],
+  ['riesgos', 'Diplomado en Gestión de Proyectos'],
+  ['liderazgo', 'Diplomado en Gestión de Proyectos'],
+  ['industria 4', 'PEE en Transformación Digital'],
+  ['cloud', 'PEE en Transformación Digital'],
+  ['devops', 'PEE en Transformación Digital'],
+  ['automatización', 'PEE en Transformación Digital'],
+]
+
+function extractEcho(question: string): string {
+  const q = question.toLowerCase()
+  for (const [word] of PROGRAM_KEYWORDS) {
+    if (q.includes(word)) return word
+  }
+  return ''
+}
 
 function keywordMatch(question: string): string {
   const q = question.toLowerCase()
-  const keywords: [string, string][] = [
-    ['sistemas', 'PEE en Ciberseguridad'],
-    ['industrial', 'PEE en Transformación Digital'],
-    ['datos', 'Diplomado en Ciencia de Datos'],
-    ['ciencia', 'Diplomado en Ciencia de Datos'],
-    ['proyectos', 'Diplomado en Gestión de Proyectos'],
-    ['gestión', 'Diplomado en Gestión de Proyectos'],
-    ['ciberseguridad', 'PEE en Ciberseguridad'],
-    ['seguridad', 'PEE en Ciberseguridad'],
-    ['digital', 'PEE en Transformación Digital'],
-    ['transformación', 'PEE en Transformación Digital'],
-    ['power bi', 'Curso Taller de Power BI'],
-    ['powerbi', 'Curso Taller de Power BI'],
-    ['prácticas', 'Diplomado en Ciencia de Datos'],
-    ['practicas', 'Diplomado en Ciencia de Datos'],
-    ['python', 'Diplomado en Ciencia de Datos'],
-    ['machine learning', 'Diplomado en Ciencia de Datos'],
-    ['machine', 'Diplomado en Ciencia de Datos'],
-    ['hacking', 'PEE en Ciberseguridad'],
-    ['ético', 'PEE en Ciberseguridad'],
-    ['iso', 'PEE en Ciberseguridad'],
-    ['dax', 'Curso Taller de Power BI'],
-    ['dashboard', 'Curso Taller de Power BI'],
-    ['visualización', 'Curso Taller de Power BI'],
-    ['pmbok', 'Diplomado en Gestión de Proyectos'],
-    ['ágil', 'Diplomado en Gestión de Proyectos'],
-    ['agil', 'Diplomado en Gestión de Proyectos'],
-    ['scrum', 'Diplomado en Gestión de Proyectos'],
-    ['riesgos', 'Diplomado en Gestión de Proyectos'],
-    ['liderazgo', 'Diplomado en Gestión de Proyectos'],
-    ['industria 4', 'PEE en Transformación Digital'],
-    ['cloud', 'PEE en Transformación Digital'],
-    ['devops', 'PEE en Transformación Digital'],
-    ['automatización', 'PEE en Transformación Digital'],
-  ]
 
   const matched = new Set<string>()
-  for (const [word, program] of keywords) {
+  for (const [word, program] of PROGRAM_KEYWORDS) {
     if (q.includes(word)) matched.add(program)
   }
 
   if (matched.size === 0) return ''
 
+  const echo = extractEcho(question)
   const matchedList = [...matched]
   const recs = matchedList.map(name => {
     const prog = programs.find(p => p.name === name)
     return prog ? `• *${prog.name}* — _${prog.type}_\n  ${prog.description}` : `• *${name}*`
   }).join('\n\n')
 
-  let reply = 'Por tu consulta, creo que estos programas del CEE pueden interesarte:\n\n'
+  let reply = echo
+    ? `¡*${echo.charAt(0).toUpperCase() + echo.slice(1)}* es un gran tema! Estos programas del CEE pueden interesarte:\n\n`
+    : 'Por tu consulta, creo que estos programas del CEE pueden interesarte:\n\n'
   reply += recs
   reply += '\n\n¿Te gustaría que te cuente más sobre alguno? Responde el *nombre del programa*.'
   if (matchedList.length > 1) reply += '\n\nTambién puedes volver al menú respondiendo *0*.'
@@ -101,7 +113,10 @@ export const faqFlow = addKeyword(['preguntas', 'dudas', 'consulta'])
     // Capa 2: Base de conocimiento
     const kbAnswer = findAnswer(question, state.get<string>('programInterest'))
     if (kbAnswer) {
-      await flowDynamic([{ body: kbAnswer, delay: rnd() }])
+      const parts = splitResponse(kbAnswer)
+      for (let i = 0; i < parts.length; i++) {
+        await flowDynamic([{ body: parts[i], delay: i > 0 ? delayBetween() : rnd() }])
+      }
       extensions.messageLog?.outgoing(ctx.from, kbAnswer)
       return fallBack('¿Hay algo más en lo que pueda ayudarte?')
     }
@@ -109,7 +124,10 @@ export const faqFlow = addKeyword(['preguntas', 'dudas', 'consulta'])
     // Capa 3: Keyword fallback
     const kwAnswer = keywordMatch(question)
     if (kwAnswer) {
-      await flowDynamic([{ body: kwAnswer, delay: rnd() }])
+      const parts = splitResponse(kwAnswer)
+      for (let i = 0; i < parts.length; i++) {
+        await flowDynamic([{ body: parts[i], delay: i > 0 ? delayBetween() : rnd() }])
+      }
       extensions.messageLog?.outgoing(ctx.from, kwAnswer)
       return
     }
@@ -127,7 +145,10 @@ export const faqFlow = addKeyword(['preguntas', 'dudas', 'consulta'])
 
     if (!reply) reply = '¿Te gustaría que te derive con un asesor para resolver tu consulta? Responde *sí* o *no*.'
 
-    await flowDynamic([{ body: reply, delay: rnd() }])
+    const parts = splitResponse(reply)
+    for (let i = 0; i < parts.length; i++) {
+      await flowDynamic([{ body: parts[i], delay: i > 0 ? delayBetween() : rnd() }])
+    }
     extensions.messageLog?.outgoing(ctx.from, reply)
   })
   .addAction({ capture: true, idle: 120000 }, async (ctx, { gotoFlow, endFlow, fallBack, flowDynamic, extensions }) => {
