@@ -16,6 +16,42 @@ function getClient(): OpenAI {
   return _client
 }
 
+// Circuit breaker: 3 fallos en 60s → 60s de cooldown
+let failures = 0
+let failuresWindowStart = 0
+let cooldownUntil = 0
+const MAX_FAILURES = 3
+const FAILURE_WINDOW_MS = 60_000
+const COOLDOWN_MS = 60_000
+
+function isCircuitOpen(): boolean {
+  if (cooldownUntil > Date.now()) {
+    console.warn('[ai] Circuito abierto. Reintentando en', Math.round((cooldownUntil - Date.now()) / 1000), 's')
+    return true
+  }
+  return false
+}
+
+function recordFailure(): void {
+  const now = Date.now()
+  if (now - failuresWindowStart > FAILURE_WINDOW_MS) {
+    failures = 1
+    failuresWindowStart = now
+  } else {
+    failures++
+  }
+  if (failures >= MAX_FAILURES) {
+    cooldownUntil = now + COOLDOWN_MS
+    console.error('[ai] Circuito abierto por', COOLDOWN_MS / 1000, 's tras', MAX_FAILURES, 'fallos')
+  }
+}
+
+function recordSuccess(): void {
+  failures = 0
+  failuresWindowStart = 0
+  cooldownUntil = 0
+}
+
 const SYSTEM_PROMPT = `Eres el asistente virtual del *Centro de Especialización Ejecutiva* (CEE) de la Facultad de Ingeniería Industrial y de Sistemas (FIIS) de la Universidad Nacional de Ingeniería (UNI).
 
 # QUIÉNES SOMOS
@@ -64,18 +100,39 @@ const conversations = new LRUCache<string, ChatMessage[]>({
 
 const lastCall = new Map<string, number>()
 
+async function callWithRetry(messages: ChatMessage[], maxTokens: number): Promise<string> {
+  if (isCircuitOpen()) throw new Error('Circuit open')
+
+  let lastError: Error | null = null
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const completion = await getClient().chat.completions.create({
+        model: 'gemini-2.5-flash',
+        messages,
+        max_tokens: maxTokens,
+      })
+      recordSuccess()
+      return completion.choices[0]?.message?.content ?? ''
+    } catch (err) {
+      lastError = err as Error
+      console.warn(`[ai] Intento ${attempt + 1}/3 falló:`, lastError.message)
+      if ((err as { status?: number }).status === 429) {
+        const delay = Math.pow(2, attempt) * 1000
+        await new Promise(r => setTimeout(r, delay))
+      }
+    }
+  }
+  recordFailure()
+  throw lastError ?? new Error('Todas las llamadas a Gemini fallaron')
+}
+
 export const ai = {
   async ask(prompt: string, history: ChatMessage[] = []): Promise<string> {
-    const completion = await getClient().chat.completions.create({
-      model: 'gemini-2.5-flash',
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        ...history,
-        { role: 'user', content: prompt },
-      ],
-      max_tokens: 800,
-    })
-    return completion.choices[0]?.message?.content ?? ''
+    return callWithRetry([
+      { role: 'system', content: SYSTEM_PROMPT },
+      ...history,
+      { role: 'user', content: prompt },
+    ], 800)
   },
 
   async chat(phone: string, message: string, context?: string): Promise<string> {
@@ -105,13 +162,7 @@ export const ai = {
       { role: 'user', content: message },
     ]
 
-    const completion = await getClient().chat.completions.create({
-      model: 'gemini-2.5-flash',
-      messages,
-      max_tokens: 500,
-    })
-
-    const reply = completion.choices[0]?.message?.content ?? ''
+    const reply = await callWithRetry(messages, 500)
 
     history.push({ role: 'user', content: message })
     history.push({ role: 'assistant', content: reply })

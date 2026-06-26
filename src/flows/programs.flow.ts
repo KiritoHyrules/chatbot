@@ -3,16 +3,37 @@ import { join } from 'node:path'
 import { programs } from '../data/programs.js'
 import { rnd } from '../utils.js'
 
+function reorderPrograms(userMessage: string) {
+  const q = userMessage.toLowerCase()
+  const scored = programs.map(p => {
+    let score = 0
+    const name = p.name.toLowerCase()
+    const desc = p.description.toLowerCase()
+    if (q.includes('sistemas') && (name.includes('ciberseguridad') || name.includes('digital') || name.includes('datos'))) score += 3
+    if (q.includes('industrial') && (name.includes('gestión') || name.includes('proyectos') || name.includes('digital'))) score += 3
+    if (q.includes('datos') || q.includes('python') || q.includes('machine')) { if (name.includes('datos')) score += 3 }
+    if (q.includes('seguridad') || q.includes('hacking')) { if (name.includes('ciberseguridad')) score += 3 }
+    if (q.includes('proyecto') || q.includes('gestión') || q.includes('pmbok')) { if (name.includes('gestión') || name.includes('proyectos')) score += 3 }
+    if (q.includes('digital') || q.includes('transformación') || q.includes('industria')) { if (name.includes('digital')) score += 3 }
+    if (q.includes('power') || q.includes('bi') || q.includes('excel') || q.includes('dashboard')) { if (name.includes('power')) score += 3 }
+    if (q.includes('práctica') || q.includes('practica')) { if (name.includes('datos') || name.includes('power')) score += 2 }
+    return { ...p, _score: score }
+  })
+  scored.sort((a, b) => b._score - a._score)
+  return scored
+}
+
 export const programsFlow = addKeyword(['programas', 'cursos', 'diplomados', 'pee'])
   .addAction(async (ctx, { flowDynamic, extensions }) => {
     extensions.messageLog?.incoming(ctx.from, ctx.body ?? '')
     if (!extensions.messageLog?.shouldRespond(ctx.from)) return
 
-    const list = programs.map((p, i) => `*${i + 1}.* ${p.name} — _${p.type}_`).join('\n')
+    const ordered = reorderPrograms(ctx.body ?? '')
+    const list = ordered.map((p, i) => `*${i + 1}.* ${p.name} — _${p.type}_`).join('\n')
     let intro: string | undefined
     try {
       intro = await extensions.ai?.chat(ctx.from,
-        `El usuario quiere ver los programas disponibles. Esta es la lista:\n${list}\n\nPreséntasela de forma cálida y dile que responda con el número del programa que le interesa para recibir más información.`)
+        `El usuario quiere ver los programas disponibles. Esta es la lista:\n${list}\n\nPreséntasela de forma cálida y dile que responda con el número del programa que le interesa para recibir más información.${ordered[0]._score > 0 ? '\n\nEl usuario mostró interés en temas relacionados con los primeros programas de la lista. Destácalos sutilmente.' : ''}`)
     } catch {
       console.warn('[programs] Gemini falló en intro')
     }
