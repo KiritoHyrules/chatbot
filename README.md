@@ -2,6 +2,13 @@
 
 Chatbot de WhatsApp para el Centro de Especialización Ejecutiva de la FIIS-UNI.
 
+## Documentación
+
+- [Documentación completa para desarrolladores](docs/PROJECT.md)
+- [Reglas para agentes de IA](AGENTS.md)
+- [Developer A — Flujos e IA](DEVELOPER_A.md)
+- [Developer B — Servicios de inteligencia](DEVELOPER_B.md)
+
 ## Requisitos
 
 Cero. El bot instala todo automáticamente.
