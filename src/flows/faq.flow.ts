@@ -103,9 +103,15 @@ export const faqFlow = addKeyword(['preguntas', 'dudas', 'consulta'])
 
     extensions.pipeline?.classifyAndSend(ctx.from, question, 'Consulta en FAQ')
 
-    // Capa 1: Moderación
+    // Capa 1: Moderación + frustración
     const mod = extensions.moderation?.check(question)
     if (mod?.blocked) {
+      const hostile = extensions.conversationContext?.recordHostility(ctx.from)
+      if (hostile || extensions.conversationContext?.isFrustrated(ctx.from)) {
+        await flowDynamic([{ body: 'Voy a derivarte con un asesor del CEE para atenderte mejor.', delay: rnd() }])
+        const { handoffFlow } = await import('./handoff.flow.js')
+        return gotoFlow(handoffFlow)
+      }
       await flowDynamic([{ body: mod.response!, delay: rnd() }])
       return fallBack('¿Hay algo más en lo que pueda ayudarte con información académica?')
     }
