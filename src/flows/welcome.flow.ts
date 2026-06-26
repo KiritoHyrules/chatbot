@@ -71,5 +71,5 @@ export const welcomeFlow = addKeyword(EVENTS.WELCOME)
     } catch {
       console.warn('[welcome] Gemini falló en reintento')
     }
-    await flowDynamic([{ body: reply ?? 'Puedes: *1* Ver programas, *2* Hacer una consulta, o *3* Hablar con un asesor. ¿Qué prefieres?', delay: rnd() }])
+    await flowDynamic([{ body: reply ?? 'Puedes: *1* Ver programas, *2* Hacer una consulta, o *3* Hablar con un asesor. ¿Qué te gustaría hacer?', delay: rnd() }])
   })

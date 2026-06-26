@@ -59,7 +59,7 @@ export const programsFlow = addKeyword(['programas', 'cursos', 'diplomados', 'pe
         retry = await extensions.ai?.chat(ctx.from, option,
           `El usuario respondió "${option}" pero no es un número válido (1-${programs.length}). Pídele que elija un número de la lista.`)
       } catch { /* fallback */ }
-      return fallBack(retry ?? `Opción inválida. Responde un número del *1* al *${programs.length}*.`)
+      return fallBack(retry ?? `No entendí bien. ¿Me decís el número del programa que te interesa? (1-${programs.length})`)
     }
 
     const program = programs[index - 1]
@@ -88,21 +88,48 @@ export const programsFlow = addKeyword(['programas', 'cursos', 'diplomados', 'pe
       return gotoFlow(leadCaptureFlow)
     }
     if (option === '2' || text === 'no') {
-      return endFlow('Gracias por tu interés. Escribe *hola* cuando necesites algo más.')
+      return endFlow('Gracias por tu interés. Escribe cualquier cosa cuando necesites algo más.')
     }
     if (option === 'cancelar' || option === 'salir') {
-      return endFlow('Escribe *hola* cuando desees retomar.')
+      return endFlow('Escribe cuando quieras retomar.')
     }
 
-    const kbAnswer = findAnswer(option, state.get<string>('programInterest'))
-    if (kbAnswer) {
-      await flowDynamic([{ body: kbAnswer, delay: rnd() }])
+    // Capa 1: Extraer número de la frase
+    const num = extractNumber(option)
+    if (num && num >= 1 && num <= programs.length) {
+      const prog = programs[num - 1]
+      await state.update({ programInterest: prog.name })
+      const detail = prog.description
+      await flowDynamic([{ body: `*${prog.name}* — ${detail}`, delay: rnd() }])
       return fallBack('¿Te gustaría que un asesor te contacte? Responde *sí* o *no*.')
     }
 
+    // Capa 2: Buscar en knowledge base sobre el programa actual
+    const currentProgram = state.get<string>('programInterest') ?? extensions.conversationContext?.get(ctx.from)?.lastProgramShown
+    const kbAnswer = findAnswer(option, currentProgram ?? null)
+    if (kbAnswer) {
+      await flowDynamic([{ body: kbAnswer, delay: rnd() }])
+      return fallBack('¿Querés saber algo más de este programa?')
+    }
+
+    // Capa 3: Buscar en knowledge base general
+    const generalKb = findAnswer(option)
+    if (generalKb) {
+      await flowDynamic([{ body: generalKb, delay: rnd() }])
+      return
+    }
+
+    // Capa 4: Intentar Gemini
     let retry: string | undefined
     try {
-      retry = await extensions.ai?.chat(ctx.from, option, 'El usuario dio una respuesta ambigua. Pregúntale si quiere ser contactado (sí) o no (no).')
+      retry = await extensions.ai?.chat(ctx.from, option, 'El usuario hizo una pregunta después de ver un programa. Responde con información útil sobre el CEE o sus programas.')
     } catch { /* fallback */ }
-    return fallBack(retry ?? '¿Te gustaría que un asesor te contacte? Responde *sí* o *no*.')
+
+    if (retry) {
+      await flowDynamic([{ body: retry, delay: rnd() }])
+      return
+    }
+
+    // Capa 5: Último recurso
+    return fallBack('¿Querés que te cuente más de este programa o preferís ver otros?')
   })

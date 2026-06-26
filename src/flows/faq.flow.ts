@@ -89,7 +89,7 @@ export const faqFlow = addKeyword(['preguntas', 'dudas', 'consulta'])
   .addAction({ capture: true, idle: 300000 }, async (ctx, { flowDynamic, fallBack, endFlow, gotoFlow, state, extensions }) => {
     const question = ctx.body?.trim() ?? ''
     if (!question || question.length < 3) {
-      return fallBack('Por favor escribe tu pregunta con más detalle.')
+      return fallBack('Contame un poco más. ¿Qué te gustaría saber?')
     }
     if (question === 'cancelar' || question === 'salir') {
       return endFlow('Escribe *hola* cuando necesites algo.')
@@ -143,7 +143,7 @@ export const faqFlow = addKeyword(['preguntas', 'dudas', 'consulta'])
         : ''
     } catch { /* seguir */ }
 
-    if (!reply) reply = '¿Te gustaría que te derive con un asesor para resolver tu consulta? Responde *sí* o *no*.'
+    if (!reply) reply = '¿Querés que te derive con un asesor para resolver tu consulta? Responde *sí* o *no*.'
 
     await flowDynamic([{ body: reply, delay: rnd() }])
     extensions.messageLog?.outgoing(ctx.from, reply)
@@ -154,10 +154,17 @@ export const faqFlow = addKeyword(['preguntas', 'dudas', 'consulta'])
 
     const mod = extensions.moderation?.check(option)
     if (mod?.blocked) {
+      const hostile = extensions.conversationContext?.recordHostility(ctx.from)
+      if (hostile || extensions.conversationContext?.isFrustrated(ctx.from)) {
+        await flowDynamic([{ body: 'Voy a derivarte con un asesor del CEE.', delay: rnd() }])
+        const { handoffFlow } = await import('./handoff.flow.js')
+        return gotoFlow(handoffFlow)
+      }
       await flowDynamic([{ body: mod.response!, delay: rnd() }])
-      return fallBack('¿Hay algo más en lo que pueda ayudarte?')
+      return fallBack('¿Hay algo más en lo que pueda ayudarte con información académica?')
     }
 
+    // Buscar en knowledge base
     const kbAnswer = findAnswer(option)
     if (kbAnswer) {
       await flowDynamic([{ body: kbAnswer, delay: rnd() }])
@@ -169,13 +176,20 @@ export const faqFlow = addKeyword(['preguntas', 'dudas', 'consulta'])
       return gotoFlow(handoffFlow)
     }
     if (option === '2' || text.includes('no')) {
-      return endFlow('Me alegra haber ayudado. Escribe *hola* cuando necesites algo más.')
+      return endFlow('¡Gracias por consultar! Cualquier cosa, acá estoy.')
     }
     if (option === 'cancelar' || option === 'salir') {
-      return endFlow('Escribe *hola* cuando desees retomar.')
+      return endFlow('Escribe cuando quieras retomar.')
     }
     if (option === '0') {
-      return endFlow('Volviendo al menú. Escribe *hola* para continuar.')
+      return endFlow('Volviendo al menú. Escribe cuando necesites algo.')
     }
-    return fallBack('¿Quieres que te derive con un asesor? Responde *sí* o *no*.')
+
+    // Si no entendemos, intentar con contexto
+    const ctx2 = extensions.conversationContext?.get(ctx.from)
+    if (ctx2?.lastQuestions && ctx2.lastQuestions.length >= 2) {
+      return fallBack('¿Querés que te derive con un asesor o prefieres preguntarme algo más?')
+    }
+
+    return fallBack('¿Te gustaría que te derive con un asesor? Responde *sí* o *no*.')
   })
