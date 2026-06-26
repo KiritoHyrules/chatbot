@@ -1,5 +1,6 @@
 import { addKeyword } from '@builderbot/bot'
 import { programs } from '../data/programs.js'
+import { findAnswer } from '../data/knowledge.js'
 import { rnd } from '../utils.js'
 
 function keywordMatch(question: string): string {
@@ -24,7 +25,6 @@ function keywordMatch(question: string): string {
     ['machine', 'Diplomado en Ciencia de Datos'],
     ['hacking', 'PEE en Ciberseguridad'],
     ['ético', 'PEE en Ciberseguridad'],
-    ['ético', 'PEE en Ciberseguridad'],
     ['iso', 'PEE en Ciberseguridad'],
     ['dax', 'Curso Taller de Power BI'],
     ['dashboard', 'Curso Taller de Power BI'],
@@ -39,7 +39,6 @@ function keywordMatch(question: string): string {
     ['cloud', 'PEE en Transformación Digital'],
     ['devops', 'PEE en Transformación Digital'],
     ['automatización', 'PEE en Transformación Digital'],
-    ['cultura', 'PEE en Transformación Digital'],
   ]
 
   const matched = new Set<string>()
@@ -58,9 +57,7 @@ function keywordMatch(question: string): string {
   let reply = 'Por tu consulta, creo que estos programas del CEE pueden interesarte:\n\n'
   reply += recs
   reply += '\n\n¿Te gustaría que te cuente más sobre alguno? Responde el *nombre del programa*.'
-  if (matchedList.length > 1) {
-    reply += '\n\nTambién puedes volver al menú principal respondiendo *0*.'
-  }
+  if (matchedList.length > 1) reply += '\n\nTambién puedes volver al menú respondiendo *0*.'
   return reply
 }
 
@@ -72,14 +69,12 @@ export const faqFlow = addKeyword(['preguntas', 'dudas', 'consulta'])
     let prompt: string | undefined
     try {
       prompt = await extensions.ai?.chat(ctx.from,
-        'El usuario eligió la opción de consultas. Preséntate brevemente y dile que puede preguntar lo que necesite sobre programas, inscripciones, horarios o cualquier tema del CEE.')
-    } catch {
-      console.warn('[faq] Gemini falló en prompt')
-    }
+        'El usuario eligió consultas. Dile brevemente que puede preguntar sobre programas, inscripciones, horarios, etc.')
+    } catch { /* fallback */ }
 
     await flowDynamic([{ body: prompt ?? 'Estoy aquí para resolver tus dudas. ¿Qué necesitas saber?', delay: rnd() }])
   })
-  .addAction({ capture: true, idle: 300000 }, async (ctx, { flowDynamic, fallBack, endFlow, gotoFlow, extensions }) => {
+  .addAction({ capture: true, idle: 300000 }, async (ctx, { flowDynamic, fallBack, endFlow, gotoFlow, state, extensions }) => {
     const question = ctx.body?.trim() ?? ''
     if (!question || question.length < 3) {
       return fallBack('Por favor escribe tu pregunta con más detalle.')
@@ -87,46 +82,82 @@ export const faqFlow = addKeyword(['preguntas', 'dudas', 'consulta'])
     if (question === 'cancelar' || question === 'salir') {
       return endFlow('Escribe *hola* cuando necesites algo.')
     }
+    if (question === '0') {
+      return endFlow('Volviendo al menú. Escribe *hola* para continuar.')
+    }
 
     extensions.messageLog?.incoming(ctx.from, question)
     if (!extensions.messageLog?.shouldRespond(ctx.from)) return
 
     extensions.pipeline?.classifyAndSend(ctx.from, question, 'Consulta en FAQ')
 
+    // Capa 1: Moderación
+    const mod = extensions.moderation?.check(question)
+    if (mod?.blocked) {
+      await flowDynamic([{ body: mod.response!, delay: rnd() }])
+      return fallBack('¿Hay algo más en lo que pueda ayudarte con información académica?')
+    }
+
+    // Capa 2: Base de conocimiento
+    const kbAnswer = findAnswer(question, state.get<string>('programInterest'))
+    if (kbAnswer) {
+      await flowDynamic([{ body: kbAnswer, delay: rnd() }])
+      extensions.messageLog?.outgoing(ctx.from, kbAnswer)
+      return fallBack('¿Hay algo más en lo que pueda ayudarte?')
+    }
+
+    // Capa 3: Keyword fallback
+    const kwAnswer = keywordMatch(question)
+    if (kwAnswer) {
+      await flowDynamic([{ body: kwAnswer, delay: rnd() }])
+      extensions.messageLog?.outgoing(ctx.from, kwAnswer)
+      return
+    }
+
+    // Capa 4: Gemini (último recurso)
     let reply = ''
     try {
       reply = extensions?.ai
         ? await Promise.race([
             extensions.ai.chat(ctx.from, question),
-            new Promise<string>((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000)),
+            new Promise<string>((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000)),
           ])
-        : 'Disculpa, el servicio de respuestas no está disponible en este momento.'
-    } catch {
-      reply = keywordMatch(question)
-      if (!reply) {
-        reply = 'Lo siento, no pude procesar tu consulta a tiempo. ¿Quieres que te derive con un asesor? Responde *1* para sí o *2* para no.'
-      }
-    }
+        : ''
+    } catch { /* seguir */ }
 
-    if (!reply) reply = keywordMatch(question) || 'No encontré información sobre eso. ¿Deseas hablar con un asesor? Responde *1* para sí o *2* para no.'
+    if (!reply) reply = '¿Te gustaría que te derive con un asesor para resolver tu consulta? Responde *sí* o *no*.'
 
     await flowDynamic([{ body: reply, delay: rnd() }])
     extensions.messageLog?.outgoing(ctx.from, reply)
   })
-  .addAction({ capture: true, idle: 120000 }, async (ctx, { gotoFlow, endFlow, fallBack }) => {
+  .addAction({ capture: true, idle: 120000 }, async (ctx, { gotoFlow, endFlow, fallBack, flowDynamic, extensions }) => {
     const option = ctx.body?.trim() ?? ''
-    if (option === '1' || option?.toLowerCase() === 'sí' || option?.toLowerCase() === 'si') {
+    const text = option.toLowerCase()
+
+    const mod = extensions.moderation?.check(option)
+    if (mod?.blocked) {
+      await flowDynamic([{ body: mod.response!, delay: rnd() }])
+      return fallBack('¿Hay algo más en lo que pueda ayudarte?')
+    }
+
+    const kbAnswer = findAnswer(option)
+    if (kbAnswer) {
+      await flowDynamic([{ body: kbAnswer, delay: rnd() }])
+      return fallBack('¿Algo más en lo que pueda ayudarte?')
+    }
+
+    if (option === '1' || text.includes('sí') || text.includes('si')) {
       const { handoffFlow } = await import('./handoff.flow.js')
       return gotoFlow(handoffFlow)
     }
-    if (option === '2' || option?.toLowerCase() === 'no') {
+    if (option === '2' || text.includes('no')) {
       return endFlow('Me alegra haber ayudado. Escribe *hola* cuando necesites algo más.')
     }
     if (option === 'cancelar' || option === 'salir') {
       return endFlow('Escribe *hola* cuando desees retomar.')
     }
     if (option === '0') {
-      return endFlow('Volviendo al menú principal. Escribe *hola* cuando necesites algo.')
+      return endFlow('Volviendo al menú. Escribe *hola* para continuar.')
     }
-    return fallBack('Responde *1* si te ayudé, o *2* para hablar con un asesor.')
+    return fallBack('¿Quieres que te derive con un asesor? Responde *sí* o *no*.')
   })

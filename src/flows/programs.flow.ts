@@ -1,6 +1,7 @@
 import { addKeyword } from '@builderbot/bot'
 import { join } from 'node:path'
 import { programs } from '../data/programs.js'
+import { findAnswer } from '../data/knowledge.js'
 import { rnd } from '../utils.js'
 
 function reorderPrograms(userMessage: string) {
@@ -75,23 +76,31 @@ export const programsFlow = addKeyword(['programas', 'cursos', 'diplomados', 'pe
       await flowDynamic([{ body: 'Aquí tienes el brochure.', delay: rnd(), media: join(process.cwd(), 'public', 'brochures', program.brochureFile) }])
     }
   })
-  .addAction({ capture: true, idle: 120000 }, async (ctx, { gotoFlow, endFlow, fallBack, extensions }) => {
+  .addAction({ capture: true, idle: 120000 }, async (ctx, { gotoFlow, endFlow, fallBack, flowDynamic, state, extensions }) => {
     const option = ctx.body?.trim() ?? ''
-    if (option === '1' || option?.toLowerCase() === 'sí' || option?.toLowerCase() === 'si') {
+    const text = option.toLowerCase()
+    if (option === '1' || text === 'sí' || text === 'si') {
       extensions.ai?.clearHistory(ctx.from)
       const { leadCaptureFlow } = await import('./lead-capture.flow.js')
       return gotoFlow(leadCaptureFlow)
     }
-    if (option === '2' || option?.toLowerCase() === 'no') {
+    if (option === '2' || text === 'no') {
       return endFlow('Gracias por tu interés. Escribe *hola* cuando necesites algo más.')
     }
     if (option === 'cancelar' || option === 'salir') {
       return endFlow('Escribe *hola* cuando desees retomar.')
     }
+
+    const kbAnswer = findAnswer(option, state.get<string>('programInterest'))
+    if (kbAnswer) {
+      await flowDynamic([{ body: kbAnswer, delay: rnd() }])
+      return fallBack('¿Te gustaría que un asesor te contacte? Responde *sí* o *no*.')
+    }
+
     let retry: string | undefined
     try {
       retry = await extensions.ai?.chat(ctx.from, option,
-        'El usuario dio una respuesta ambigua. Pregúntale si quiere ser contactado (1) o no (2).')
-    } catch { /* fallback abajo */ }
-    return fallBack(retry ?? 'Responde *1* para que te contactemos o *2* para volver al menú.')
+        'El usuario dio una respuesta ambigua después de ver un programa. Pregúntale si quiere ser contactado (sí) o no (no).')
+    } catch { /* fallback */ }
+    return fallBack(retry ?? '¿Te gustaría que un asesor te contacte? Responde *sí* o *no*.')
   })
