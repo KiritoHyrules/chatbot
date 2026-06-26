@@ -97,6 +97,56 @@ const TEMPLATES: Record<string, string[]> = {
     'Aquí tienes la información de {{programa}}:\n{{descripcion}}\n\nEste programa es {{tipo}}. ¿Te interesa?',
     '{{programa}} ({{tipo}}): {{descripcion}}\n\n¿Quieres que un asesor te dé más información?',
   ],
+  program_detail_gestion: [
+    'El *Diplomado en Gestión de Proyectos* te prepara para liderar proyectos bajo los estándares del *PMBOK* y metodologías *ágiles (Scrum)*. Son 6 meses (240 horas) con certificación UNI. ¿Te gustaría recibir el brochure completo?',
+    'Nuestro Diplomado en Gestión de Proyectos cubre PMBOK, Scrum, gestión de riesgos y liderazgo de equipos. *Duración:* 6 meses | *Horas:* 240 | *Modalidad:* semipresencial. ¿Te interesa inscribirte?',
+    'Si buscas liderar proyectos con estándares internacionales, el Diplomado en Gestión de Proyectos es para ti. Aprenderás PMBOK, metodologías ágiles y gestión de equipos. 6 meses, 240h, certificación UNI. ¿Quieres saber más?',
+    'El Diplomado en Gestión de Proyectos del CEE-UNI te forma en PMBOK, Scrum y gestión de stakeholders. *Duración:* 6 meses | *Horas lectivas:* 240 | *Inversión:* consulta por nuestros descuentos. ¿Te gustaría que un asesor te contacte?',
+  ],
+  program_detail_datos: [
+    'El *Diplomado en Ciencia de Datos* te sumerge en Python, Machine Learning y visualización de datos para la toma de decisiones. Son 6 meses (240 horas) con certificación UNI. ¿Te gustaría conocer el temario?',
+    'Domina Python, ML y visualización con nuestro Diplomado en Ciencia de Datos. *Duración:* 6 meses | *Horas:* 240 | *Modalidad:* semipresencial. Ideal si buscas convertirte en data-driven professional.',
+    'La Ciencia de Datos es el perfil más demandado. Nuestro diplomado te forma en Python, Machine Learning, estadística y visualización. 6 meses, 240h, certificación UNI. ¿Te gustaría recibir el brochure?',
+    'Con el Diplomado en Ciencia de Datos del CEE-UNI aprenderás a extraer insights de datos usando Python, ML y dashboards interactivos. *Duración:* 6 meses | *240 horas académicas.* ¡Pregunta por nuestros descuentos!',
+  ],
+  program_detail_transformacion: [
+    'El *PEE en Transformación Digital* está diseñado para líderes que quieren impulsar el cambio digital en sus organizaciones. Industria 4.0, cloud computing y cultura ágil. 4 meses, 120h, certificación UNI.',
+    'Transforma tu organización con el PEE en Transformación Digital. Aprenderás sobre Industria 4.0, cloud, cultura ágil y estrategia digital. *Duración:* 4 meses | *Horas:* 120. ¿Te interesa?',
+    'El programa ejecutivo en Transformación Digital del CEE-UNI es ideal para gerentes y directores que buscan liderar la digitalización. 4 meses, 120h, certificación UNI. ¿Quieres que te enviemos el plan de estudios?',
+    'Industria 4.0, cloud computing, cultura organizacional ágil. El PEE en Transformación Digital te da las herramientas para liderar el cambio. *Duración:* 4 meses | *120h.* ¡Contáctanos para más información!',
+  ],
+  program_detail_ciberseguridad: [
+    'El *PEE en Ciberseguridad* te forma en ethical hacking, gestión de incidentes y normativas ISO 27001. 4 meses, 120 horas, certificación UNI. Un campo con alta demanda laboral.',
+    'Especialízate en ciberseguridad con nuestro programa ejecutivo: ethical hacking, ISO 27001, gestión de incidentes y continuidad del negocio. *Duración:* 4 meses | *Horas:* 120. ¿Te gustaría conocer los requisitos?',
+    'La ciberseguridad es crítica para toda organización. El PEE del CEE-UNI te prepara con ethical hacking, normativas y gestión de riesgos. 4 meses, 120h, certificación UNI.',
+    'Con el PEE en Ciberseguridad aprenderás a proteger activos digitales, realizar pentesting y gestionar incidentes bajo ISO 27001. *4 meses | 120 horas | Certificación UNI.* ¿Te interesa este programa?',
+  ],
+  program_detail_powerbi: [
+    'El *Curso Taller de Power BI* te enseña a crear dashboards interactivos, usar DAX y modelar datos para la toma de decisiones ejecutivas. 2 meses, 60 horas, certificación UNI.',
+    'Domina Power BI en 2 meses: dashboards, DAX, modelado de datos y visualización ejecutiva. *Duración:* 2 meses | *Horas:* 60 | *Modalidad:* presencial/virtual. ¿Te gustaría inscribirte?',
+    'El Curso Taller de Power BI del CEE-UNI es perfecto para profesionales que necesitan convertir datos en decisiones. 2 meses, 60h, certificación UNI. ¡Cupos limitados!',
+    'Power BI es la herramienta #1 en business intelligence. Nuestro curso taller te forma en DAX, modelado y dashboards interactivos. *Duración:* 2 meses | *60 horas.* ¿Quieres más información?',
+  ],
+  program_comparison: [
+    'Si estás entre un *Diplomado* y un *PEE*, la diferencia está en el enfoque. Los diplomados (6 meses) son más extensos y profundos en habilidades técnicas. Los PEE (4 meses) están diseñados para ejecutivos que buscan actualización estratégica. ¿Cuál se alinea más con tu perfil?',
+    'Los *Diplomados* (Gestión de Proyectos, Ciencia de Datos) son ideales si buscas especialización técnica profunda. Los *PEE* (Transformación Digital, Ciberseguridad) son perfectos si ya tienes experiencia y buscas una visión estratégica. El *Curso de Power BI* es la opción rápida si necesitas una habilidad específica.',
+    '¿No sabes cuál elegir? Los diplomados tienen mayor duración y profundidad (6 meses, 240h). Los PEE son ejecutivos y estratégicos (4 meses, 120h). El curso de Power BI es intensivo y práctico (2 meses, 60h). Cuéntame más sobre tu perfil y te ayudo a decidir.',
+  ],
+  program_job_outlook: [
+    'Los egresados de {{programa}} suelen desempeñarse como líderes de proyecto, analistas, consultores o gerentes en empresas del sector público y privado. La certificación UNI abre puertas en el mercado laboral.',
+    '{{programa}} te prepara para roles de alta demanda: jefatura de proyectos, analítica de datos, consultoría digital, seguridad informática o inteligencia de negocios. Nuestra bolsa laboral tiene convenios con más de 50 empresas.',
+    'Con {{programa}} del CEE-UNI, tus oportunidades laborales crecen. Nuestros egresados reportan una mejora salarial promedio del 30% dentro del primer año. ¿Te gustaría conocer casos de éxito?',
+  ],
+  program_ideal_profile: [
+    '{{programa}} está dirigido a profesionales con experiencia mínima de 2 años que buscan especializarse o actualizarse en su campo. No requieres conocimientos previos específicos, solo motivación y compromiso.',
+    'El perfil ideal para {{programa}} incluye a ingenieros, administradores, y profesionales de carreras afines que buscan potenciar su carrera con una certificación de la UNI.',
+    '{{programa}} es perfecto si tienes espíritu de mejora continua, te interesa la innovación y quieres destacar en tu organización. ¿Cumples con este perfil? ¡Este programa es para ti!',
+  ],
+  program_benefits: [
+    'Estudiar en el CEE-UNI tiene múltiples beneficios: certificación universitaria, docentes ejecutivos en activo, modalidad semipresencial, bolsa laboral con +50 empresas y descuentos corporativos.',
+    '¿Por qué elegir el CEE-UNI? Porque combinas el prestigio de la UNI con un enfoque práctico. Accedes a networking de alto nivel, clases grabadas y una bolsa laboral exclusiva.',
+    'Al elegir el CEE-UNI obtienes: certificación con valor curricular, docentes del sector empresarial, horarios flexibles, material digital actualizado y descuentos por pronto pago. ¡Invierte en tu futuro!',
+  ],
   faq_intro: [
     'Claro, puedo ayudarte con preguntas frecuentes. Aquí te van las principales consultas:\n\n¿Qué medios de pago tienen?\n¿Cuánto dura el programa?\n¿Hay certificación?',
     'Con gusto. Estas son las preguntas más comunes:\n1. 💳 Medios de pago\n2. ⏱ Duración de programas\n3. 📜 Certificación',
