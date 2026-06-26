@@ -1,7 +1,7 @@
 import { addKeyword } from '@builderbot/bot'
 import { programs } from '../data/programs.js'
-import { findAnswer, findProgram } from '../data/knowledge.js'
-import { rnd, splitResponse, delayBetween } from '../utils.js'
+import { findAnswer } from '../data/knowledge.js'
+import { rnd } from '../utils.js'
 
 const PROGRAM_KEYWORDS: [string, string][] = [
   ['sistemas', 'PEE en Ciberseguridad'],
@@ -113,10 +113,7 @@ export const faqFlow = addKeyword(['preguntas', 'dudas', 'consulta'])
     // Capa 2: Base de conocimiento
     const kbAnswer = findAnswer(question, state.get<string>('programInterest'))
     if (kbAnswer) {
-      const parts = splitResponse(kbAnswer)
-      for (let i = 0; i < parts.length; i++) {
-        await flowDynamic([{ body: parts[i], delay: i > 0 ? delayBetween() : rnd() }])
-      }
+      await flowDynamic([{ body: kbAnswer, delay: rnd() }])
       extensions.messageLog?.outgoing(ctx.from, kbAnswer)
       return fallBack('¿Hay algo más en lo que pueda ayudarte?')
     }
@@ -124,10 +121,7 @@ export const faqFlow = addKeyword(['preguntas', 'dudas', 'consulta'])
     // Capa 3: Keyword fallback
     const kwAnswer = keywordMatch(question)
     if (kwAnswer) {
-      const parts = splitResponse(kwAnswer)
-      for (let i = 0; i < parts.length; i++) {
-        await flowDynamic([{ body: parts[i], delay: i > 0 ? delayBetween() : rnd() }])
-      }
+      await flowDynamic([{ body: kwAnswer, delay: rnd() }])
       extensions.messageLog?.outgoing(ctx.from, kwAnswer)
       return
     }
@@ -145,10 +139,7 @@ export const faqFlow = addKeyword(['preguntas', 'dudas', 'consulta'])
 
     if (!reply) reply = '¿Te gustaría que te derive con un asesor para resolver tu consulta? Responde *sí* o *no*.'
 
-    const parts = splitResponse(reply)
-    for (let i = 0; i < parts.length; i++) {
-      await flowDynamic([{ body: parts[i], delay: i > 0 ? delayBetween() : rnd() }])
-    }
+    await flowDynamic([{ body: reply, delay: rnd() }])
     extensions.messageLog?.outgoing(ctx.from, reply)
   })
   .addAction({ capture: true, idle: 120000 }, async (ctx, { gotoFlow, endFlow, fallBack, flowDynamic, extensions }) => {

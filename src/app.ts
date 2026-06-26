@@ -20,6 +20,8 @@ import { templates } from './services/response-templates.js'
 import { decision } from './services/decision-engine.js'
 import { moderation } from './services/moderation.js'
 import { metrics } from './services/metrics.js'
+import { intentRouter } from './services/intent-router.js'
+import { conversationContext } from './services/conversation-context.js'
 
 // Deduplicación de mensajes
 const seenMessages = new Map<string, number>()
@@ -75,7 +77,7 @@ const main = async () => {
 
   const { httpServer, handleCtx } = await createBot(
     { flow, provider, database },
-    { extensions: { ai, messageLog, pipeline, leadScorer, objectionDetector, urgencyDetector, tagEngine, templates, decision, moderation, metrics } }
+    { extensions: { ai, messageLog, pipeline, leadScorer, objectionDetector, urgencyDetector, tagEngine, templates, decision, moderation, metrics, intentRouter, conversationContext } }
   )
 
   provider.server.get('/health', healthCheck)

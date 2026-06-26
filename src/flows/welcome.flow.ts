@@ -18,34 +18,47 @@ export const welcomeFlow = addKeyword(EVENTS.WELCOME)
 
     await flowDynamic([{ body: greeting ?? extensions.templates?.get('welcome') ?? 'Bienvenido al CEE de la FIIS-UNI. Responde *1*, *2* o *3*.', delay: rnd() }])
   })
-  .addAction({ capture: true, idle: 120000 }, async (ctx, { gotoFlow, flowDynamic, endFlow, extensions }) => {
+  .addAction({ capture: true, idle: 120000 }, async (ctx, { gotoFlow, flowDynamic, endFlow, state, extensions }) => {
     const option = ctx.body?.trim() ?? ''
     const text = option.toLowerCase()
 
     const mod = extensions.moderation?.check(option)
     if (mod?.blocked) {
+      const frustrated = extensions.conversationContext?.recordHostility(ctx.from)
+      if (frustrated || extensions.conversationContext?.isFrustrated(ctx.from)) {
+        await flowDynamic([{ body: 'Voy a derivarte con un asesor del CEE para atenderte mejor.', delay: rnd() }])
+        const { handoffFlow } = await import('./handoff.flow.js')
+        return gotoFlow(handoffFlow)
+      }
       await flowDynamic([{ body: mod.response!, delay: rnd() }])
       return
     }
 
-    const isPrograms = option === '1' || text.includes('programa') || text.includes('curso') || text.includes('diplomado') || text.includes('catálogo') || text.includes('catalogo') || text.includes('ver') && text.length < 15
-    const isFaq = option === '2' || text.includes('duda') || text.includes('pregunta') || text.includes('consulta') || text.includes('saber')
-    const isHandoff = option === '3' || text.includes('asesor') || text.includes('hablar') || text.includes('contactar') || text.includes('persona') || text.includes('humano')
+    // Detectar intención del mensaje
+    const intent = extensions.intentRouter?.detect(option)
+    const num = intent?.number
 
-    if (isPrograms) {
+    if (intent?.intent === 'programs' || option === '1' || text.includes('ver') && text.length < 15) {
+      if (num && option !== '1') await state.update({ lastExtractedNumber: num })
       extensions.ai?.clearHistory(ctx.from)
       const { programsFlow } = await import('./programs.flow.js')
       return gotoFlow(programsFlow)
     }
-    if (isFaq) {
+    if (intent?.intent === 'faq' || option === '2') {
       extensions.ai?.clearHistory(ctx.from)
       const { faqFlow } = await import('./faq.flow.js')
       return gotoFlow(faqFlow)
     }
-    if (isHandoff) {
+    if (intent?.intent === 'handoff' || intent?.intent === 'hostile' || option === '3') {
       extensions.ai?.clearHistory(ctx.from)
       const { handoffFlow } = await import('./handoff.flow.js')
       return gotoFlow(handoffFlow)
+    }
+    if (intent?.intent === 'buying' || text.includes('precio') || text.includes('costo')) {
+      extensions.ai?.clearHistory(ctx.from)
+      await state.update({ faqContext: 'El usuario preguntó por precios.' })
+      const { faqFlow } = await import('./faq.flow.js')
+      return gotoFlow(faqFlow)
     }
     if (text === 'cancelar' || text === 'salir') {
       return endFlow('Gracias por visitarnos. Cuando necesites algo, escribe cualquier mensaje.')
@@ -58,8 +71,5 @@ export const welcomeFlow = addKeyword(EVENTS.WELCOME)
     } catch {
       console.warn('[welcome] Gemini falló en reintento')
     }
-    const parts = splitResponse(reply ?? 'Puedes: *1* Ver programas, *2* Hacer una consulta, o *3* Hablar con un asesor. ¿Qué prefieres?')
-    for (let i = 0; i < parts.length; i++) {
-      await flowDynamic([{ body: parts[i], delay: i > 0 ? delayBetween() : rnd() }])
-    }
+    await flowDynamic([{ body: reply ?? 'Puedes: *1* Ver programas, *2* Hacer una consulta, o *3* Hablar con un asesor. ¿Qué prefieres?', delay: rnd() }])
   })
