@@ -279,3 +279,11 @@ Worker cada 30s               ▼
 9. **¿La clasificación es correcta?** El orden de reglas: MATRICULADO gana sobre PROPUESTA_ENVIADA. Si alguien dice "ya pagué, pásame el link del comprobante" → MATRICULADO. ¿Es correcto o debería ser PROPUESTA_ENVIADA?
 
 10. **¿Seguridad?** El dashboard tiene auth por token. Pero las APIs no tienen rate limiting. Un atacante que adivine el token puede leer todas las conversaciones.
+
+
+
+
+
+
+
+
