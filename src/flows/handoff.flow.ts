@@ -1,6 +1,6 @@
 import { addKeyword } from '@builderbot/bot'
 import { isOpen, outsideHoursMessage } from '../services/office-hours.js'
-import { rnd } from '../utils.js'
+import { rnd, splitResponse, delayBetween } from '../utils.js'
 
 export const handoffFlow = addKeyword(['asesor', 'humano', 'hablar', 'contactar'])
   .addAction(async (ctx, { flowDynamic, gotoFlow, extensions }) => {
@@ -28,7 +28,10 @@ export const handoffFlow = addKeyword(['asesor', 'humano', 'hablar', 'contactar'
     } catch {
       console.warn('[handoff] Gemini falló fuera de horario')
     }
-    await flowDynamic([{ body: msg ?? outsideHoursMessage(), delay: rnd() }])
+    const outParts = splitResponse(msg ?? outsideHoursMessage())
+    for (let i = 0; i < outParts.length; i++) {
+      await flowDynamic([{ body: outParts[i], delay: i > 0 ? delayBetween() : rnd() }])
+    }
   })
   .addAction({ capture: true, idle: 120000 }, async (ctx, { gotoFlow, endFlow, fallBack, extensions }) => {
     const option = ctx.body?.trim() ?? ''
