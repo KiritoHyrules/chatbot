@@ -11,4 +11,3 @@ dist/
 skills-lock.json
 opencode.json
 AGENTS.md
-.env.local
