@@ -19,6 +19,7 @@ import { tagEngine } from './services/tag-engine.js'
 import { templates } from './services/response-templates.js'
 import { decision } from './services/decision-engine.js'
 import { moderation } from './services/moderation.js'
+import { metrics } from './services/metrics.js'
 
 // Deduplicación de mensajes
 const seenMessages = new Map<string, number>()
@@ -74,7 +75,7 @@ const main = async () => {
 
   const { httpServer, handleCtx } = await createBot(
     { flow, provider, database },
-    { extensions: { ai, messageLog, pipeline, leadScorer, objectionDetector, urgencyDetector, tagEngine, templates, decision, moderation } }
+    { extensions: { ai, messageLog, pipeline, leadScorer, objectionDetector, urgencyDetector, tagEngine, templates, decision, moderation, metrics } }
   )
 
   provider.server.get('/health', healthCheck)
