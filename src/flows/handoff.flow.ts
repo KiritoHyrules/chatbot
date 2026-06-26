@@ -9,14 +9,14 @@ export const handoffFlow = addKeyword(['asesor', 'humano', 'hablar', 'contactar'
 
     if (isOpen()) {
       extensions.pipeline?.classifyAndSend(ctx.from, ctx.body ?? '', 'Solicita asesor en horario')
+      const urgency = extensions.urgencyDetector?.assess(ctx.body ?? '') ?? 'NINGUNA'
+      const isUrgent = urgency === 'INMEDIATA' || urgency === 'ALTA'
       let msg: string | undefined
       try {
         msg = await extensions.ai?.chat(ctx.from,
-          'El usuario quiere hablar con un asesor humano. Estamos DENTRO del horario de atención (Lun-Vie 9am-6pm, Sáb 9am-1pm). Dile que un asesor lo atenderá pronto y que necesitas registrar sus datos primero para agilizar.')
-      } catch {
-        console.warn('[handoff] Gemini falló en horario')
-      }
-      await flowDynamic([{ body: msg ?? 'Un momento, por favor. Voy a registrar tus datos para que el asesor te atienda mejor.', delay: rnd() }])
+          `El usuario quiere hablar con un asesor humano. Estamos DENTRO del horario de atención. ${isUrgent ? 'El usuario muestra URGENCIA. Prioriza su atención.' : ''} Dile que un asesor lo atenderá pronto y que necesitas registrar sus datos primero.`)
+      } catch { /* fallback abajo */ }
+      await flowDynamic([{ body: msg ?? (isUrgent ? '¡Entendido! Por la urgencia de tu solicitud, voy a agilizar el registro. ¿Cuál es tu nombre?' : 'Un momento, por favor. Voy a registrar tus datos para que el asesor te atienda mejor.') , delay: rnd() }])
       const { leadCaptureFlow } = await import('./lead-capture.flow.js')
       return gotoFlow(leadCaptureFlow)
     }

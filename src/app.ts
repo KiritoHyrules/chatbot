@@ -12,6 +12,12 @@ import { healthCheck } from './middleware/health.js'
 import { startOutboxWorker, stopOutboxWorker } from './services/outbox.js'
 import { initDb, closeDb } from './database/sqlite.js'
 import { pipeline } from './services/pipeline.js'
+import { leadScorer } from './services/lead-scorer.js'
+import { objectionDetector } from './services/objection-detector.js'
+import { urgencyDetector } from './services/urgency-detector.js'
+import { tagEngine } from './services/tag-engine.js'
+import { templates } from './services/response-templates.js'
+import { decision } from './services/decision-engine.js'
 
 // Deduplicación de mensajes
 const seenMessages = new Map<string, number>()
@@ -67,7 +73,7 @@ const main = async () => {
 
   const { httpServer, handleCtx } = await createBot(
     { flow, provider, database },
-    { extensions: { ai, messageLog, pipeline } }
+    { extensions: { ai, messageLog, pipeline, leadScorer, objectionDetector, urgencyDetector, tagEngine, templates, decision } }
   )
 
   provider.server.get('/health', healthCheck)

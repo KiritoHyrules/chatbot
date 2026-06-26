@@ -101,6 +101,7 @@ export const leadCaptureFlow = addKeyword(utils.setEvent('EVENT_LEAD_CAPTURE'))
     outbox.enqueue('lead.classified', {
       lead: { id: lead.id, name, dni, phone, email, programInterest, status: lead.status, createdAt: lead.createdAt },
       classification,
+      tags: extensions.tagEngine?.tag(ctx.body ?? ''),
     })
 
     const summary = `Nombre: ${name}, DNI: ${dni}, Teléfono: ${phone}, Email: ${email}`
