@@ -1,9 +1,19 @@
 import { addKeyword } from '@builderbot/bot'
 import { join } from 'node:path'
 import { programs } from '../data/programs.js'
-import { findAnswer } from '../data/knowledge.js'
+import { findAnswer, programCard } from '../data/knowledge.js'
 import { extractNumber } from '../services/number-extractor.js'
 import { rnd } from '../utils.js'
+
+function replyOrFallback(hp: { reply: Function } | undefined, ctx: { from: string }, flowDynamic: Function, text: string, opts?: Record<string, unknown>) {
+  if (hp) {
+    return hp.reply(ctx, flowDynamic, text, opts ?? {})
+  }
+  if (opts?.media) {
+    return flowDynamic([{ body: text, delay: rnd(), media: opts.media }])
+  }
+  return flowDynamic([{ body: text, delay: rnd() }])
+}
 
 function reorderPrograms(userMessage: string) {
   const q = userMessage.toLowerCase()
@@ -26,19 +36,22 @@ function reorderPrograms(userMessage: string) {
 
 export const programsFlow = addKeyword(['programas', 'cursos', 'diplomados', 'pee'])
   .addAction(async (ctx, { flowDynamic, extensions }) => {
+    const aggregated = await extensions.aggregator?.waitForBurst(ctx.from, ctx.body ?? '', 'programs')
+    if (aggregated === null) return
+    ctx.body = aggregated
+
     extensions.messageLog?.incoming(ctx.from, ctx.body ?? '')
     if (!extensions.messageLog?.shouldRespond(ctx.from)) return
+    extensions.conversationContext?.recordFlowPosition?.(ctx.from, 'programs', '¿Qué programa te interesa? Responde con el número.')
 
+    const hp = extensions.humanPresence as { reply: Function } | undefined
     const ordered = reorderPrograms(ctx.body ?? '')
-    const list = ordered.map((p, i) => `*${i + 1}.* ${p.name} — _${p.type}_`).join('\n')
-    let intro: string | undefined
-    try {
-      intro = await extensions.ai?.chat(ctx.from,
-        `El usuario quiere ver los programas disponibles. Esta es la lista:\n${list}\n\nPreséntasela de forma cálida y dile que responda con el número del programa que le interesa.${ordered[0]._score > 0 ? '\n\nEl usuario mostró interés en temas relacionados con los primeros programas. Destácalos sutilmente.' : ''}`)
-    } catch { /* fallback */ }
-    await flowDynamic([{ body: intro ?? list, delay: rnd() }])
+    const list = ordered.map((p, i) => `*${i + 1}.* ${p.name}\n     _${p.type}_`).join('\n')
+    const hardcoded = `📚 *Programas del CEE-UNI*\n\n${list}\n\n👉 Responde con el *número* del programa que te interesa.`
+    await replyOrFallback(hp, ctx, flowDynamic, hardcoded)
   })
   .addAction({ capture: true, idle: 120000 }, async (ctx, { flowDynamic, fallBack, endFlow, state, extensions }) => {
+    const hp = extensions.humanPresence as { reply: Function } | undefined
     const option = ctx.body?.trim() ?? ''
 
     if (option === 'cancelar' || option === 'salir') {
@@ -59,7 +72,7 @@ export const programsFlow = addKeyword(['programas', 'cursos', 'diplomados', 'pe
         retry = await extensions.ai?.chat(ctx.from, option,
           `El usuario respondió "${option}" pero no es un número válido (1-${programs.length}). Pídele que elija un número de la lista.`)
       } catch { /* fallback */ }
-      return fallBack(retry ?? `No entendí bien. ¿Me decís el número del programa que te interesa? (1-${programs.length})`)
+      return fallBack(retry ?? `No entendí bien. ¿Me dices el número del programa que te interesa? (1-${programs.length})`)
     }
 
     const program = programs[index - 1]
@@ -67,20 +80,34 @@ export const programsFlow = addKeyword(['programas', 'cursos', 'diplomados', 'pe
     extensions.pipeline?.classifyAndSend(ctx.from, option, `Interesado en: ${program.name}`)
     extensions.conversationContext?.recordProgram(ctx.from, program.name)
 
-    let detail: string | undefined
-    try {
-      detail = await extensions.ai?.chat(ctx.from,
-        `El usuario seleccionó el programa: "${program.name}" (${program.type}). Descripción: ${program.description}. ${program.brochureFile ? 'Tiene brochure disponible.' : 'No tiene brochure.'} Cuéntale sobre este programa y pregúntale si quiere que un asesor lo contacte (sí o no).`)
-    } catch { /* fallback */ }
-    await flowDynamic([{ body: detail ?? program.description, delay: rnd() }])
+    // Ficha verificada y decorada (garantiza información correcta del curso)
+    const card = programCard(program.name) ?? `*${program.name}*\n${program.description}`
+    await replyOrFallback(hp, ctx, flowDynamic, card)
 
     if (program.brochureFile) {
-      await flowDynamic([{ body: 'Aquí tienes el brochure.', delay: rnd(), media: join(process.cwd(), 'public', 'brochures', program.brochureFile) }])
+      await replyOrFallback(hp, ctx, flowDynamic, '📎 Aquí tienes el brochure con todos los detalles.', { media: join(process.cwd(), 'public', 'brochures', program.brochureFile) })
     }
+
+    await replyOrFallback(hp, ctx, flowDynamic, '¿Te gustaría que un asesor del CEE te contacte para más información? Responde *sí* o *no*.')
   })
   .addAction({ capture: true, idle: 120000 }, async (ctx, { gotoFlow, endFlow, fallBack, flowDynamic, state, extensions }) => {
+    extensions.conversationContext?.recordFlowPosition?.(ctx.from, 'programs', '¿Te gustaría que un asesor te contacte? Responde sí o no.')
+    const hp = extensions.humanPresence as { reply: Function } | undefined
     const option = ctx.body?.trim() ?? ''
     const text = option.toLowerCase()
+
+    // shouldEscape: detectar pregunta fuera de contexto
+    const escapeIntent = extensions.intentRouter?.detect?.(option)
+    if (escapeIntent && escapeIntent.confidence !== 'BAJA' && escapeIntent.intent !== 'unclear') {
+      const currentProgram = state.get<string>('programInterest') ?? extensions.conversationContext?.get(ctx.from)?.lastProgramShown
+      const kbAnswer = findAnswer(option, currentProgram ?? null) || findAnswer(option)
+      if (kbAnswer && hp) {
+        await hp.reply(ctx, flowDynamic, kbAnswer)
+      } else if (kbAnswer) {
+        await replyOrFallback(hp, ctx, flowDynamic, kbAnswer)
+      }
+      return fallBack('¿Te gustaría que un asesor te contacte? Responde *sí* o *no*.')
+    }
 
     if (option === '1' || text === 'sí' || text === 'si') {
       extensions.ai?.clearHistory(ctx.from)
@@ -94,42 +121,37 @@ export const programsFlow = addKeyword(['programas', 'cursos', 'diplomados', 'pe
       return endFlow('Escribe cuando quieras retomar.')
     }
 
-    // Capa 1: Extraer número de la frase
     const num = extractNumber(option)
     if (num && num >= 1 && num <= programs.length) {
       const prog = programs[num - 1]
       await state.update({ programInterest: prog.name })
-      const detail = prog.description
-      await flowDynamic([{ body: `*${prog.name}* — ${detail}`, delay: rnd() }])
+      const card = programCard(prog.name) ?? `*${prog.name}* — ${prog.description}`
+      await replyOrFallback(hp, ctx, flowDynamic, card)
       return fallBack('¿Te gustaría que un asesor te contacte? Responde *sí* o *no*.')
     }
 
-    // Capa 2: Buscar en knowledge base sobre el programa actual
     const currentProgram = state.get<string>('programInterest') ?? extensions.conversationContext?.get(ctx.from)?.lastProgramShown
     const kbAnswer = findAnswer(option, currentProgram ?? null)
     if (kbAnswer) {
-      await flowDynamic([{ body: kbAnswer, delay: rnd() }])
-      return fallBack('¿Querés saber algo más de este programa?')
+      await replyOrFallback(hp, ctx, flowDynamic, kbAnswer)
+      return fallBack('¿Quieres saber algo más de este programa?')
     }
 
-    // Capa 3: Buscar en knowledge base general
     const generalKb = findAnswer(option)
     if (generalKb) {
-      await flowDynamic([{ body: generalKb, delay: rnd() }])
+      await replyOrFallback(hp, ctx, flowDynamic, generalKb)
       return
     }
 
-    // Capa 4: Intentar Gemini
     let retry: string | undefined
     try {
       retry = await extensions.ai?.chat(ctx.from, option, 'El usuario hizo una pregunta después de ver un programa. Responde con información útil sobre el CEE o sus programas.')
     } catch { /* fallback */ }
 
     if (retry) {
-      await flowDynamic([{ body: retry, delay: rnd() }])
+      await replyOrFallback(hp, ctx, flowDynamic, retry)
       return
     }
 
-    // Capa 5: Último recurso
-    return fallBack('¿Querés que te cuente más de este programa o preferís ver otros?')
+    return fallBack('¿Quieres que te cuente más de este programa o prefieres ver otros?')
   })

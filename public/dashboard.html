@@ -85,9 +85,13 @@ let state = null
 let selectedPhone = null
 let interval = null
 
+const TOKEN = new URLSearchParams(location.search).get('token') || ''
+const authHeaders = (extra) => Object.assign({ 'Authorization': 'Bearer ' + TOKEN }, extra || {})
+
 async function fetchState() {
   try {
-    const r = await fetch('/api/dashboard/state')
+    const r = await fetch('/api/dashboard/state', { headers: authHeaders() })
+    if (r.status === 401) { showError('No autorizado. Abre el dashboard con ?token=TU_SECRETO en la URL.'); return }
     state = await r.json()
     renderSidebar()
     if (selectedPhone) renderChat()
@@ -158,7 +162,7 @@ async function toggleMode() {
   try {
     await fetch('/api/dashboard/mode', {
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers: authHeaders({'Content-Type':'application/json'}),
       body: JSON.stringify({ phone: selectedPhone, mode: newMode })
     })
     await fetchState()
@@ -172,7 +176,7 @@ async function sendMessage() {
   try {
     await fetch('/api/dashboard/send', {
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers: authHeaders({'Content-Type':'application/json'}),
       body: JSON.stringify({ phone: selectedPhone, message: msg })
     })
     input.value = ''
