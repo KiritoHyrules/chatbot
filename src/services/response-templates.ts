@@ -238,6 +238,50 @@ const TEMPLATES: Record<string, string[]> = {
     'Ese número ("{{input}}") tiene pocos dígitos. ¿Me lo pasas de nuevo?',
     'Parece que faltan dígitos en "{{input}}". El celular tiene 9 dígitos.',
   ],
+  // Sprint 4 — Nuevos templates para reemplazar Gemini
+  faq_welcome: [
+    'Estoy aquí para resolver tus dudas sobre el CEE. ¿Qué necesitas saber?',
+    'Cuéntame tu consulta. Puedo ayudarte con información de programas, inscripciones y más.',
+    '¿Qué te gustaría saber sobre los programas del CEE? Estoy para ayudarte.',
+    'Adelante, pregúntame lo que necesites sobre el CEE-UNI.',
+  ],
+  program_invalid_number: [
+    'No entendí ese número. ¿Me dices un número del 1 al 5 según la lista de programas?',
+    'Elige un número del 1 al 5 de la lista que te mostré. ¿Cuál te interesa?',
+    'Responde con el número del programa que te llame la atención (1 al 5).',
+    '¿Me indicas el número del programa? Así te cuento más detalles.',
+  ],
+  handoff_description: [
+    'Un asesor del CEE revisará tu caso y te contactará pronto por WhatsApp. Mientras tanto, ¿te dejo tus datos registrados para agilizar?',
+    'Voy a derivarte con el equipo del CEE. Ellos te atenderán personalmente. ¿Quieres dejar tus datos para que te contacten más rápido?',
+    'Te conecto con un asesor del CEE. Para que te atiendan mejor, ¿me permites registrar tus datos primero?',
+    'Perfecto, un asesor del CEE se pondrá en contacto contigo. ¿Me dejas tu nombre y DNI para agilizar?',
+  ],
+  handoff_confirm: [
+    'Tus datos fueron registrados. Un asesor del CEE te contactará pronto. ¿Necesitas algo más mientras tanto?',
+    'Listo, ya tengo tus datos. El equipo del CEE te escribirá en breve. ¡Gracias por tu interés!',
+    'Registro completado. Un asesor te atenderá personalmente. ¿Algo más en lo que pueda ayudarte?',
+  ],
+  registration_done: [
+    '*Datos registrados exitosamente*.\nUn asesor del CEE se pondrá en contacto contigo pronto para darte más información sobre el programa.',
+    '¡Listo! Tus datos fueron registrados. El equipo del CEE te contactará en breve. Gracias por tu interés en nuestros programas.',
+    'Registro completado con éxito. Un asesor del CEE te escribirá pronto con más detalles del programa que te interesa.',
+    '¡Gracias por registrarte! Tus datos están seguros. Un asesor del CEE te contactará para resolver todas tus dudas.',
+    'Todo listo. El CEE ya tiene tus datos y un asesor te atenderá personalmente. ¡Gracias por confiar en nosotros!',
+    'Tus datos quedaron registrados. Pronto recibirás un mensaje de nuestro equipo del CEE. ¿Mientras tanto, algo más en lo que pueda ayudarte?',
+  ],
+  rag_no_results: [
+    'No encontré información exacta sobre eso en este momento. ¿Quieres que te derive con un asesor del CEE?',
+    'No tengo una respuesta específica para tu consulta. ¿Te gustaría que un asesor te contacte?',
+    'Qué buena pregunta. Para darte una respuesta precisa, ¿te derivo con un asesor del CEE?',
+    'Eso escapa un poco de lo que puedo consultar ahora. ¿Prefieres hablar directamente con un asesor?',
+  ],
+  rag_fallback: [
+    'Estoy aquí para ayudarte con información sobre los programas del CEE. ¿Qué te gustaría saber?',
+    'Puedo contarte sobre nuestros diplomados, PEE y cursos. ¿Hay algo en específico que te interese?',
+    'Cuéntame qué te interesa: conocer los programas, resolver una duda, o hablar con un asesor.',
+    '¿En qué puedo orientarte? Tengo información de los 5 programas del CEE-FIIS-UNI.',
+  ],
 }
 
 const perUser = new LRUCache<string, Map<string, number[]>>({

@@ -16,31 +16,20 @@ export const handoffFlow = addKeyword(['asesor', 'humano', 'hablar', 'contactar'
       extensions.pipeline?.classifyAndSend(ctx.from, ctx.body ?? '', 'Solicita asesor en horario')
       const urgency = extensions.urgencyDetector?.assess(ctx.body ?? '') ?? 'NINGUNA'
       const isUrgent = urgency === 'INMEDIATA' || urgency === 'ALTA'
-      let msg: string | undefined
-      try {
-        msg = await extensions.ai?.chat(ctx.from,
-          `El usuario quiere hablar con un asesor humano. Estamos DENTRO del horario de atención. ${isUrgent ? 'El usuario muestra URGENCIA. Prioriza su atención.' : ''} Dile que un asesor lo atenderá pronto y que necesitas registrar sus datos primero.`)
-      } catch { /* fallback abajo */ }
-      const fallback = isUrgent
-        ? '¡Entendido! Por la urgencia de tu solicitud, voy a agilizar el registro. ¿Cuál es tu nombre?'
-        : 'Un momento, por favor. Voy a registrar tus datos para que el asesor te atienda mejor.'
+      const handoffMsg = extensions.templates?.pick('handoff_description', ctx.from)
+        ?? (isUrgent
+          ? '¡Entendido! Por la urgencia de tu solicitud, voy a agilizar el registro. ¿Cuál es tu nombre?'
+          : 'Un momento, por favor. Voy a registrar tus datos para que el asesor te atienda mejor.')
       if (hp) {
-        await hp.reply(ctx, flowDynamic, msg ?? fallback)
+        await hp.reply(ctx, flowDynamic, handoffMsg)
       } else {
-        await flowDynamic([{ body: msg ?? fallback, delay: rnd() }])
+        await flowDynamic([{ body: handoffMsg, delay: rnd() }])
       }
       const { leadCaptureFlow } = await import('./lead-capture.flow.js')
       return gotoFlow(leadCaptureFlow)
     }
 
-    let msg: string | undefined
-    try {
-      msg = await extensions.ai?.chat(ctx.from,
-        `El usuario quiere hablar con un asesor pero estamos FUERA de horario. ${outsideHoursMessage()} Pregúntale si quiere dejar sus datos para que lo contactemos al abrir (responde 1 para sí, 2 para no).`)
-    } catch {
-      console.warn('[handoff] Gemini falló fuera de horario')
-    }
-    const outParts = splitResponse(msg ?? outsideHoursMessage())
+    const outParts = splitResponse(outsideHoursMessage())
     if (hp) {
       await hp.reply(ctx, flowDynamic, outParts)
     } else {
@@ -53,7 +42,6 @@ export const handoffFlow = addKeyword(['asesor', 'humano', 'hablar', 'contactar'
     extensions.conversationContext?.recordFlowPosition?.(ctx.from, 'handoff', 'Responde 1 para dejar tus datos o 2 para salir.')
     const option = ctx.body?.trim() ?? ''
 
-    // shouldEscape: detectar pregunta fuera de contexto
     const escapeIntent = extensions.intentRouter?.detect?.(option)
     const isNumericOption = option === '1' || option === '2'
     if (escapeIntent && escapeIntent.confidence !== 'BAJA' && escapeIntent.intent !== 'unclear' && !isNumericOption) {
@@ -77,10 +65,5 @@ export const handoffFlow = addKeyword(['asesor', 'humano', 'hablar', 'contactar'
     if (option === '2' || option?.toLowerCase() === 'no') {
       return endFlow('Entendido. Si cambias de opinión, escribe *hola*. ¡Hasta pronto!')
     }
-    let retry: string | undefined
-    try {
-      retry = await extensions.ai?.chat(ctx.from, option,
-        'El usuario dio una respuesta ambigua. Pregúntale si quiere dejar sus datos (1) o no (2).')
-    } catch { /* fallback abajo */ }
-    return fallBack(retry ?? 'Responde *1* para dejar tus datos o *2* para salir.')
+    return fallBack('Responde *1* para dejar tus datos o *2* para salir.')
   })

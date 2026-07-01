@@ -67,12 +67,9 @@ export const programsFlow = addKeyword(['programas', 'cursos', 'diplomados', 'pe
     }
 
     if (isNaN(index) || index < 1 || index > programs.length) {
-      let retry: string | undefined
-      try {
-        retry = await extensions.ai?.chat(ctx.from, option,
-          `El usuario respondió "${option}" pero no es un número válido (1-${programs.length}). Pídele que elija un número de la lista.`)
-      } catch { /* fallback */ }
-      return fallBack(retry ?? `No entendí bien. ¿Me dices el número del programa que te interesa? (1-${programs.length})`)
+      const retry = extensions.templates?.pick('program_invalid_number', ctx.from)
+        ?? `No entendí bien. ¿Me dices el número del programa que te interesa? (1-${programs.length})`
+      return fallBack(retry)
     }
 
     const program = programs[index - 1]
@@ -82,9 +79,11 @@ export const programsFlow = addKeyword(['programas', 'cursos', 'diplomados', 'pe
 
     let detail: string | undefined
     try {
-      detail = await extensions.ai?.chat(ctx.from,
-        `El usuario seleccionó el programa: "${program.name}" (${program.type}). Descripción: ${program.description}. ${program.brochureFile ? 'Tiene brochure disponible.' : 'No tiene brochure.'} Cuéntale sobre este programa y pregúntale si quiere que un asesor lo contacte (sí o no).`)
-    } catch { /* fallback */ }
+      const chunks = await extensions.rag?.retrieve(program.name, { topK: 1, threshold: 0.6 })
+      if (chunks && chunks.length > 0) {
+        detail = chunks[0].content
+      }
+    } catch { /* RAG falló, usar descripción */ }
     await replyOrFallback(hp, ctx, flowDynamic, detail ?? program.description)
 
     if (program.brochureFile) {
@@ -111,7 +110,6 @@ export const programsFlow = addKeyword(['programas', 'cursos', 'diplomados', 'pe
     }
 
     if (option === '1' || text === 'sí' || text === 'si') {
-      extensions.ai?.clearHistory(ctx.from)
       const { leadCaptureFlow } = await import('./lead-capture.flow.js')
       return gotoFlow(leadCaptureFlow)
     }
@@ -146,8 +144,11 @@ export const programsFlow = addKeyword(['programas', 'cursos', 'diplomados', 'pe
 
     let retry: string | undefined
     try {
-      retry = await extensions.ai?.chat(ctx.from, option, 'El usuario hizo una pregunta después de ver un programa. Responde con información útil sobre el CEE o sus programas.')
-    } catch { /* fallback */ }
+      const chunks = await extensions.rag?.retrieve(option, { topK: 1, threshold: 0.75 })
+      if (chunks && chunks.length > 0) {
+        retry = chunks[0].content
+      }
+    } catch { /* RAG falló */ }
 
     if (retry) {
       await replyOrFallback(hp, ctx, flowDynamic, retry)

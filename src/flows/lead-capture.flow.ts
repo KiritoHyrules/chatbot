@@ -158,15 +158,11 @@ export const leadCaptureFlow = addKeyword(utils.setEvent('EVENT_LEAD_CAPTURE'))
     const summary = `Nombre: ${name}, DNI: ${dni}, Teléfono: ${phone}, Email: ${email}`
     extensions.messageLog?.outgoing(ctx.from, `Lead registrado: ${summary} | Pipeline: ${classification.etapa_asignada}`)
 
-    try {
-      const msg = await extensions.ai?.chat(ctx.from,
-        `El usuario completó el registro con estos datos: ${summary}. Confírmale que sus datos se registraron, agradécele y dile que un asesor lo contactará pronto.`)
-      const parts = splitResponse(msg ?? `*Datos registrados exitosamente*\nUn asesor del CEE se pondrá en contacto contigo pronto.`)
-      for (let i = 0; i < parts.length; i++) {
-        await flowDynamic([{ body: parts[i], delay: i > 0 ? delayBetween() : rnd() }])
-      }
-    } catch {
-      await flowDynamic([{ body: `*Datos registrados exitosamente*\nUn asesor del CEE se pondrá en contacto contigo pronto.`, delay: rnd() }])
+    const doneMsg = extensions.templates?.pick('registration_done', ctx.from)
+      ?? `*Datos registrados exitosamente*\nUn asesor del CEE se pondrá en contacto contigo pronto.`
+    const parts = splitResponse(doneMsg)
+    for (let i = 0; i < parts.length; i++) {
+      await flowDynamic([{ body: parts[i], delay: i > 0 ? delayBetween() : rnd() }])
     }
     return endFlow()
   })

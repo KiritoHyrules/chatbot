@@ -43,7 +43,6 @@ export const welcomeFlow = addKeyword(EVENTS.WELCOME)
 
         if (intent?.intent === 'programs') {
           if (intent.number) await state.update({ lastExtractedNumber: intent.number })
-          extensions.ai?.clearHistory(ctx.from)
           const { programsFlow } = await import('./programs.flow.js')
           return gotoFlow(programsFlow)
         }
@@ -51,19 +50,16 @@ export const welcomeFlow = addKeyword(EVENTS.WELCOME)
           if (intent.intent === 'buying') {
             await state.update({ faqContext: 'El usuario preguntó por precios.' })
           }
-          extensions.ai?.clearHistory(ctx.from)
           const { faqFlow } = await import('./faq.flow.js')
           return gotoFlow(faqFlow)
         }
         if (intent?.intent === 'handoff') {
-          extensions.ai?.clearHistory(ctx.from)
           const { handoffFlow } = await import('./handoff.flow.js')
           return gotoFlow(handoffFlow)
         }
         if (intent?.intent === 'hostile') {
           const count = extensions.conversationContext?.recordHostility(ctx.from) ?? 0
           if ((count ?? 0) >= 3) {
-            extensions.ai?.clearHistory(ctx.from)
             const { handoffFlow } = await import('./handoff.flow.js')
             return gotoFlow(handoffFlow)
           }
@@ -111,7 +107,6 @@ export const welcomeFlow = addKeyword(EVENTS.WELCOME)
 
       if (intent.intent === 'programs') {
         if (num) await state.update({ lastExtractedNumber: num })
-        extensions.ai?.clearHistory(ctx.from)
         const { programsFlow } = await import('./programs.flow.js')
         return gotoFlow(programsFlow)
       }
@@ -119,16 +114,13 @@ export const welcomeFlow = addKeyword(EVENTS.WELCOME)
         if (intent.intent === 'buying') {
           await state.update({ faqContext: 'El usuario preguntó por precios.' })
         }
-        extensions.ai?.clearHistory(ctx.from)
         const { faqFlow } = await import('./faq.flow.js')
         return gotoFlow(faqFlow)
       }
       if (intent.intent === 'handoff') {
-        extensions.ai?.clearHistory(ctx.from)
         const { handoffFlow } = await import('./handoff.flow.js')
         return gotoFlow(handoffFlow)
       }
-      // === FIX 1.4: hostile → contador, no derivación inmediata ===
       if (intent.intent === 'hostile') {
         const count = extensions.conversationContext?.recordHostility(ctx.from) ?? 0
         if ((count ?? 0) >= 3) {
@@ -188,24 +180,20 @@ export const welcomeFlow = addKeyword(EVENTS.WELCOME)
 
     if (intent?.intent === 'programs' || option === '1' || (text.includes('ver') && text.length < 15)) {
       if (num && option !== '1') await state.update({ lastExtractedNumber: num })
-      extensions.ai?.clearHistory(ctx.from)
       const { programsFlow } = await import('./programs.flow.js')
       return gotoFlow(programsFlow)
     }
     if (intent?.intent === 'faq' || option === '2') {
-      extensions.ai?.clearHistory(ctx.from)
       const { faqFlow } = await import('./faq.flow.js')
       return gotoFlow(faqFlow)
     }
     if (intent?.intent === 'handoff' || option === '3') {
-      extensions.ai?.clearHistory(ctx.from)
       const { handoffFlow } = await import('./handoff.flow.js')
       return gotoFlow(handoffFlow)
     }
     if (intent?.intent === 'hostile') {
       const count = extensions.conversationContext?.recordHostility(ctx.from) ?? 0
       if ((count ?? 0) >= 3) {
-        extensions.ai?.clearHistory(ctx.from)
         const { handoffFlow } = await import('./handoff.flow.js')
         return gotoFlow(handoffFlow)
       }
@@ -218,7 +206,6 @@ export const welcomeFlow = addKeyword(EVENTS.WELCOME)
       return
     }
     if (intent?.intent === 'buying' || text.includes('precio') || text.includes('costo')) {
-      extensions.ai?.clearHistory(ctx.from)
       await state.update({ faqContext: 'El usuario preguntó por precios.' })
       const { faqFlow } = await import('./faq.flow.js')
       return gotoFlow(faqFlow)
@@ -227,16 +214,16 @@ export const welcomeFlow = addKeyword(EVENTS.WELCOME)
       return endFlow('Gracias por visitarnos. Cuando necesites algo, escribe cualquier mensaje.')
     }
 
-    // Fallback — último intento con Gemini
+    // Fallback — intentar RAG, luego template
     extensions.conversationContext?.recordFlowPosition?.(ctx.from, 'welcome', '¿En qué te puedo ayudar?')
     let reply: string | undefined
     try {
-      reply = await extensions.ai?.chat(ctx.from, option,
-        'El usuario no seleccionó una opción clara. Respóndele de forma amable, recuérdale que puede ver programas, hacer consultas o hablar con un asesor.')
-    } catch {
-      console.warn('[welcome] Gemini falló en reintento')
-    }
-    const fallback = reply ?? 'Cuéntame qué te interesa: conocer los programas, resolver una duda, o hablar con un asesor.'
+      const chunks = await extensions.rag?.retrieve(option, { topK: 3, threshold: 0.7 })
+      if (chunks && chunks.length > 0) {
+        reply = extensions.rag?.formatResponse?.(chunks, option) ?? chunks.map((c: { content: string }) => c.content).join('\n')
+      }
+    } catch { /* RAG falló, seguir */ }
+    const fallback = reply ?? extensions.templates?.pick('rag_fallback', ctx.from) ?? 'Cuéntame qué te interesa: conocer los programas, resolver una duda, o hablar con un asesor.'
     if (hp) {
       await hp.reply(ctx, flowDynamic, fallback)
     } else {

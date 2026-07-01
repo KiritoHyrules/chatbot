@@ -90,13 +90,8 @@ export const faqFlow = addKeyword(['preguntas', 'dudas', 'consulta'])
     if (!extensions.messageLog?.shouldRespond(ctx.from)) return
     const hp = extensions.humanPresence as { reply: Function } | undefined
 
-    let prompt: string | undefined
-    try {
-      prompt = await extensions.ai?.chat(ctx.from,
-        'El usuario eligió consultas. Dile brevemente que puede preguntar sobre programas, inscripciones, horarios, etc.')
-    } catch { /* fallback */ }
-
-    await replyOrFallback(hp, ctx, flowDynamic, prompt ?? 'Estoy aquí para resolver tus dudas. ¿Qué necesitas saber?')
+    const prompt = extensions.templates?.pick('faq_welcome', ctx.from) ?? 'Estoy aquí para resolver tus dudas. ¿Qué necesitas saber?'
+    await replyOrFallback(hp, ctx, flowDynamic, prompt)
   })
   .addAction({ capture: true, idle: 300000 }, async (ctx, { flowDynamic, fallBack, endFlow, gotoFlow, state, extensions }) => {
     extensions.conversationContext?.recordFlowPosition?.(ctx.from, 'faq', '¿Qué te gustaría saber?')
@@ -146,18 +141,16 @@ export const faqFlow = addKeyword(['preguntas', 'dudas', 'consulta'])
       return
     }
 
-    // Capa 4: Gemini (último recurso)
+    // Capa 4: RAG — búsqueda semántica en documentos
     let reply = ''
     try {
-      reply = extensions?.ai
-        ? await Promise.race([
-            extensions.ai.chat(ctx.from, question),
-            new Promise<string>((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000)),
-          ])
-        : ''
-    } catch { /* seguir */ }
+      const chunks = await extensions.rag?.retrieve(question, { topK: 3, threshold: 0.7 })
+      if (chunks && chunks.length > 0) {
+        reply = extensions.rag?.formatResponse?.(chunks, question) ?? chunks.map((c: { content: string }) => c.content).join('\n\n')
+      }
+    } catch { /* RAG falló, seguir sin respuesta */ }
 
-    if (!reply) reply = '¿Quieres que te derive con un asesor para resolver tu consulta? Responde *sí* o *no*.'
+    if (!reply) reply = extensions.templates?.pick('rag_no_results', ctx.from) ?? '¿Quieres que te derive con un asesor para resolver tu consulta? Responde *sí* o *no*.'
 
     await replyOrFallback(hp, ctx, flowDynamic, reply)
     extensions.messageLog?.outgoing(ctx.from, reply)
