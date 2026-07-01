@@ -275,19 +275,6 @@ export const knowledgeQueries = {
   },
 }
 
-export const geminiUsage = {
-  track(success: boolean) {
-    const today = new Date().toISOString().slice(0, 10)
-    if (success) {
-      runSafe(`INSERT INTO gemini_usage (date, requests, tokens, errors) VALUES (?, 1, 0, 0)
-        ON CONFLICT(date) DO UPDATE SET requests = requests + 1`, [today])
-    } else {
-      runSafe(`INSERT INTO gemini_usage (date, requests, tokens, errors) VALUES (?, 0, 0, 1)
-        ON CONFLICT(date) DO UPDATE SET errors = errors + 1`, [today])
-    }
-  },
-}
-
 export function getWriteBufferSize(): number {
   return writeBuffer.length
 }

@@ -7,7 +7,6 @@ const log = child('app')
 import { flow } from './flows/index.js'
 import { provider } from './provider/index.js'
 import { database } from './database/index.js'
-import { ai } from './services/ai.js'
 import { messageLog } from './services/message-log.js'
 import { dashboard } from './services/store.js'
 import { leads, outbox, stopBufferFlush } from './services/store.js'
@@ -101,7 +100,7 @@ const main = async () => {
 
   const { httpServer, handleCtx } = await createBot(
     { flow, provider, database },
-    { extensions: { ai, messageLog, pipeline, leadScorer, objectionDetector, urgencyDetector, tagEngine, templates, decision, moderation, metrics, intentRouter, conversationContext, humanPresence, aggregator: { waitForBurst } } }
+    { extensions: { messageLog, pipeline, leadScorer, objectionDetector, urgencyDetector, tagEngine, templates, decision, moderation, metrics, intentRouter, conversationContext, humanPresence, aggregator: { waitForBurst } } }
   )
 
   // Health check enriquecido
@@ -109,7 +108,6 @@ const main = async () => {
     const dbHealth = verifyDbHealth()
     const outboxMetrics = getOutboxMetrics()
     const waHealth = getWhatsAppHealth()
-    const aiHealth = ai.getHealth()
     const ctxCache = conversationContext.getCacheStats()
 
     const healthy = dbHealth.healthy && waHealth.state === 'connected'
@@ -121,13 +119,12 @@ const main = async () => {
       db: dbHealth,
       outbox: outboxMetrics,
       whatsapp: waHealth,
-      ai: aiHealth,
+      rag: { available: false },
       cache: ctxCache,
       memory: {
         dedupSize: seenMessages.size,
         rateLimitSize: rateLimitMap.size,
       },
-      gemini: process.env.GEMINI_API_KEY ? 'configured' : 'missing',
       timestamp: new Date().toISOString(),
     }
 
@@ -151,7 +148,6 @@ const main = async () => {
     const outboxMetrics = getOutboxMetrics()
     const dbHealth = verifyDbHealth()
     const waHealth = getWhatsAppHealth()
-    const aiHealth = ai.getHealth()
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({
       conversations,
@@ -159,7 +155,7 @@ const main = async () => {
         dbHealthy: dbHealth.healthy,
         draining,
         whatsapp: waHealth,
-        ai: aiHealth,
+        rag: { available: false },
         outbox: outboxMetrics,
       },
     }))

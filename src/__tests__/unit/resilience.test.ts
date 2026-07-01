@@ -193,21 +193,20 @@ describe('message-aggregator shutdown', () => {
   })
 })
 
-// ==================== Circuit Breaker Gemini ====================
-describe('AI health', () => {
-  it('ai module es importable', async () => {
-    const { ai } = await import('../../services/ai.js')
-    expect(ai).toBeDefined()
-    expect(typeof ai.chat).toBe('function')
-    expect(typeof ai.ask).toBe('function')
-    expect(typeof ai.clearHistory).toBe('function')
+// ==================== RAG health ====================
+describe('RAG health', () => {
+  it('rag module es importable', async () => {
+    const { rag } = await import('../../services/rag/index.js')
+    expect(rag).toBeDefined()
+    expect(typeof rag.retrieve).toBe('function')
+    expect(typeof rag.formatResponse).toBe('function')
   })
 
   it('getHealth existe como metodo', async () => {
-    const { ai } = await import('../../services/ai.js')
-    const health = ai.getHealth()
+    const { rag } = await import('../../services/rag/index.js')
+    const health = rag.getHealth()
     expect(health).toBeDefined()
-    expect(typeof health.circuitState).toBe('string')
+    expect(typeof health.available).toBe('boolean')
   })
 })
 
@@ -339,12 +338,6 @@ describe('store operations', () => {
     aiStore.addMessage('51999999999', 'user', 'test')
     aiStore.clearHistory('51999999999')
     expect(aiStore.getHistory('51999999999').length).toBe(0)
-  })
-
-  it('geminiUsage track persiste exito y error', async () => {
-    const { geminiUsage } = await import('../../services/store.js')
-    expect(() => geminiUsage.track(true)).not.toThrow()
-    expect(() => geminiUsage.track(false)).not.toThrow()
   })
 
   it('knowledgeQueries record no lanza', async () => {

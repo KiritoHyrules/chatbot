@@ -13,7 +13,6 @@ const FILES = [
   'src/services/response-templates.ts',
   'src/data/knowledge.ts',
   'src/data/programs.ts',
-  'src/services/ai.ts',
   'src/flows/welcome.flow.ts',
   'src/flows/programs.flow.ts',
   'src/flows/lead-capture.flow.ts',

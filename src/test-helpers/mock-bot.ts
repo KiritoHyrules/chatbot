@@ -37,10 +37,6 @@ export function mockFallBack() {
 
 export function mockExtensions(overrides: Record<string, unknown> = {}) {
   return {
-    ai: {
-      chat: vi.fn().mockResolvedValue('Respuesta de prueba'),
-      clearHistory: vi.fn(),
-    },
     messageLog: {
       incoming: vi.fn(),
       outgoing: vi.fn(),

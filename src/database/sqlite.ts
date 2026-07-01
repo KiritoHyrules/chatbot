@@ -174,14 +174,6 @@ export async function initDb(): Promise<SqlJsDatabase> {
       was_useful INTEGER DEFAULT 0,
       created_at TEXT NOT NULL
     );
-    CREATE TABLE IF NOT EXISTS gemini_usage (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      date TEXT NOT NULL,
-      requests INTEGER DEFAULT 0,
-      tokens INTEGER DEFAULT 0,
-      errors INTEGER DEFAULT 0,
-      UNIQUE(date)
-    );
   `)
 
   // Agregar columnas faltantes (compatibilidad con versiones anteriores)

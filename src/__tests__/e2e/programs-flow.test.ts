@@ -12,7 +12,7 @@ describe('E2E — programs flow', () => {
     const extensions = mockExtensions()
     const ctx = mockCtx({ body: 'programas' })
     expect(flowDynamic).toBeDefined()
-    expect(extensions.ai.chat).toBeDefined()
+    expect(extensions.messageLog).toBeDefined()
   })
 
   it('selección inválida (0) provoca fallBack', () => {
