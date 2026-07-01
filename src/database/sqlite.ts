@@ -241,16 +241,15 @@ export function saveDb(): void {
 export function verifyDbHealth(): { healthy: boolean; details: string } {
   if (!_db) return { healthy: false, details: 'DB no inicializada' }
   try {
-    const results: Array<{ ok: string }> = []
-    _db.exec('PRAGMA integrity_check')
     const stmt = _db.prepare('PRAGMA integrity_check')
+    const results: string[] = []
     while (stmt.step()) {
-      results.push(stmt.getAsObject() as { ok: string })
+      results.push(stmt.getAsObject()['integrity_check'] as string)
     }
     stmt.free()
-    const healthy = results.length === 1 && results[0].ok === 'ok'
+    const healthy = results.length === 1 && results[0] === 'ok'
     _healthy = healthy
-    return { healthy, details: healthy ? 'ok' : results.map(r => r.ok).join(', ') }
+    return { healthy, details: healthy ? 'ok' : results.join(', ') }
   } catch (err) {
     _healthy = false
     return { healthy: false, details: (err as Error)?.message ?? 'error desconocido' }

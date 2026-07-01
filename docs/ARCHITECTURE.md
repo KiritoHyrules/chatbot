@@ -267,7 +267,66 @@ El grafo de código solo captura imports y calls directos. Estas conexiones **no
 
 ---
 
-## 13. Cómo explorar la arquitectura (codebase-memory)
+## 13. Capa de resiliencia (v3.3)
+
+### Circuit breakers
+| Componente | Umbral | Ventana | Cooldown | Half-open |
+|-----------|--------|---------|----------|-----------|
+| Gemini (`ai.ts`) | 3 fallos | 60s | 60s | Si (prueba 1 request antes de reabrir) |
+| n8n (`outbox.ts`) | 3 fallos | 120s | 300s | No |
+| Rate limit por usuario | 3s entre mensajes mismo phone | - | - | - |
+
+### DB recovery (`sqlite.ts`)
+- `PRAGMA integrity_check` al iniciar
+- Si DB corrupta: renombrar a `cee.db.corrupt.{timestamp}`, restaurar desde `cee.db.bak`
+- Si backup también corrupto: crear BD nueva
+- Auto-save cada 10s con backup previo
+- `PRAGMA busy_timeout = 5000` para evitar deadlocks
+
+### Write buffer (`store.ts`)
+- Si `db().run()` falla, las queries entran en un buffer en memoria
+- Flush cada 15s cuando la DB se recupera
+- `runSafe()` retorna `{ ok: boolean }` para operaciones críticas
+
+### Cache LRU
+| Cache | TTL | Max items | Archivo |
+|-------|-----|-----------|---------|
+| Conversation context | 5 min | ilimitado | `conversation-context.ts` |
+| AI history | 30 min | 500 users | `ai.ts` |
+| Knowledge answers | 6 horas | 500 queries | `knowledge.ts` |
+| Dedup messages | 10s | ilimitado | `app.ts` |
+
+### Health check (`GET /health`)
+Responde 200 o 503 con:
+- `db.healthy` — integridad SQLite
+- `whatsapp.state` — conectado/desconectado/reintentos
+- `ai.circuitState` — closed/open/half-open + latencia p50/p95
+- `outbox.pending` — eventos pendientes + circuito n8n
+- `cache` — hits/misses + tamaño
+
+### Graceful shutdown
+1. `draining = true` → rechazar nuevos mensajes
+2. `dropAll()` → limpiar buffers de mensajes
+3. Esperar 3s → drenar mensajes en vuelo
+4. `stopOutboxWorker()` + `stopBufferFlush()`
+5. `verifyDbHealth()` → reporte final
+6. `closeDb()` → exit
+
+### Retry & backoff
+| Sistema | Estrategia |
+|---------|-----------|
+| Gemini | 429: 2s, 4s, 8s, 16s. 500: 1s, 2s, 4s. Network: 1s, 2s, 3s, 4s |
+| Outbox | 30s, 2min, 10min, 1h, 6h (5 intentos → failed) |
+| DB save | 1 reintento a 500ms |
+
+### Observabilidad
+- **Pino** structured logging con levels: debug/info/warn/error
+- `LOG_LEVEL` env var (default: debug en dev, info en prod)
+- Cada módulo tiene su propio child logger (`module: 'sqlite'`, `module: 'ai'`, etc.)
+
+---
+
+## 14. Cómo explorar la arquitectura (codebase-memory)
 
 ```bash
 # Indexar (una vez)
