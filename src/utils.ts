@@ -3,7 +3,8 @@ export const rnd = () => Math.floor(Math.random() * 800) + 500
 export const delayBetween = () => Math.floor(Math.random() * 1000) + 1000
 
 export function splitResponse(body: string, maxLen = 120): string[] {
-  if (body.length <= maxLen) return [body]
+  if (!body || !body.trim()) return []
+  if (body.length <= maxLen) return [body.trim()]
   const chunks: string[] = []
   const parts = body.split(/\n{2,}/)
   let current = ''
@@ -16,5 +17,5 @@ export function splitResponse(body: string, maxLen = 120): string[] {
     }
   }
   if (current) chunks.push(current.trim())
-  return chunks.length > 1 ? chunks : [body]
+  return chunks.length > 1 ? chunks : [body.trim()]
 }

@@ -17,18 +17,46 @@ function getClient(): OpenAI {
   return _client
 }
 
-// Circuit breaker: 3 fallos en 60s → 60s de cooldown
+// Circuit breaker mejorado con half-open
 let failures = 0
 let failuresWindowStart = 0
 let cooldownUntil = 0
+let circuitState: 'closed' | 'open' | 'half-open' = 'closed'
 const MAX_FAILURES = 3
 const FAILURE_WINDOW_MS = 60_000
 const COOLDOWN_MS = 60_000
 
+// Métricas
+const latencyHistory: number[] = []
+const MAX_LATENCY_SAMPLES = 100
+
+function getLatencyStats(): { p50: number; p95: number; samples: number } {
+  if (latencyHistory.length === 0) return { p50: 0, p95: 0, samples: 0 }
+  const sorted = [...latencyHistory].sort((a, b) => a - b)
+  const p50 = sorted[Math.floor(sorted.length * 0.5)]
+  const p95 = sorted[Math.floor(sorted.length * 0.95)]
+  return { p50, p95, samples: sorted.length }
+}
+
+function recordLatency(ms: number): void {
+  latencyHistory.push(ms)
+  if (latencyHistory.length > MAX_LATENCY_SAMPLES) latencyHistory.shift()
+}
+
 function isCircuitOpen(): boolean {
-  if (cooldownUntil > Date.now()) {
-    console.warn('[ai] Circuito abierto. Reintentando en', Math.round((cooldownUntil - Date.now()) / 1000), 's')
+  if (circuitState === 'open') {
+    if (cooldownUntil <= Date.now()) {
+      circuitState = 'half-open'
+      console.log('[ai] Circuito en half-open. Probando conexión...')
+      return false
+    }
+    if (Math.round((cooldownUntil - Date.now()) / 1000) % 30 === 0) {
+      console.warn('[ai] Circuito abierto. Reintentando en', Math.round((cooldownUntil - Date.now()) / 1000), 's')
+    }
     return true
+  }
+  if (circuitState === 'half-open') {
+    return false
   }
   return false
 }
@@ -41,7 +69,16 @@ function recordFailure(): void {
   } else {
     failures++
   }
-  if (failures >= MAX_FAILURES) {
+
+  if (circuitState === 'half-open') {
+    circuitState = 'open'
+    cooldownUntil = now + COOLDOWN_MS
+    console.error('[ai] Half-open falló. Circuito abierto por', COOLDOWN_MS / 1000, 's')
+    return
+  }
+
+  if (failures >= MAX_FAILURES && circuitState === 'closed') {
+    circuitState = 'open'
     cooldownUntil = now + COOLDOWN_MS
     console.error('[ai] Circuito abierto por', COOLDOWN_MS / 1000, 's tras', MAX_FAILURES, 'fallos')
   }
@@ -51,8 +88,52 @@ function recordFailure(): void {
 function recordSuccess(): void {
   failures = 0
   failuresWindowStart = 0
+  circuitState = 'closed'
   cooldownUntil = 0
   try { geminiUsage.track(true) } catch { /* ok */ }
+}
+
+// Health check proactivo — ping mínimo cada 5 min si el circuito está cerrado
+let lastHealthCheck = 0
+const HEALTH_CHECK_INTERVAL_MS = 5 * 60 * 1000
+
+async function proactiveHealthCheck(): Promise<boolean> {
+  if (!process.env.GEMINI_API_KEY) return false
+  if (circuitState === 'open') return false
+  const now = Date.now()
+  if (now - lastHealthCheck < HEALTH_CHECK_INTERVAL_MS) return true
+  lastHealthCheck = now
+
+  try {
+    const start = Date.now()
+    await getClient().chat.completions.create({
+      model: 'gemini-2.5-flash',
+      messages: [{ role: 'user', content: 'ping' }],
+      max_tokens: 1,
+    }, { timeout: 3000 })
+    const elapsed = Date.now() - start
+    recordLatency(elapsed)
+    recordSuccess()
+    return true
+  } catch {
+    recordFailure()
+    console.warn('[ai] Health check proactivo falló.')
+    return false
+  }
+}
+
+export function getAiHealth(): {
+  circuitState: string
+  failures: number
+  latency: { p50: number; p95: number; samples: number }
+  lastHealthCheck: string
+} {
+  return {
+    circuitState,
+    failures,
+    latency: getLatencyStats(),
+    lastHealthCheck: lastHealthCheck ? new Date(lastHealthCheck).toISOString() : 'never',
+  }
 }
 
 const SYSTEM_PROMPT = `Eres el asistente virtual del *Centro de Especialización Ejecutiva* (CEE) de la Facultad de Ingeniería Industrial y de Sistemas (FIIS) de la Universidad Nacional de Ingeniería (UNI).
@@ -126,24 +207,55 @@ const conversations = new LRUCache<string, ChatMessage[]>({
 
 const lastCall = new Map<string, number>()
 
+// Retry con backoff diferenciado por tipo de error
 async function callWithRetry(messages: ChatMessage[], maxTokens: number): Promise<string> {
   if (isCircuitOpen()) throw new Error('Circuit open')
 
   let lastError: Error | null = null
-  for (let attempt = 0; attempt < 2; attempt++) {
+  const maxRetries = 3
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
+      const start = Date.now()
       const completion = await getClient().chat.completions.create({
         model: 'gemini-2.5-flash',
         messages,
         max_tokens: maxTokens,
-      }, { timeout: 5000 })
+      }, { timeout: 8000 })
+      const elapsed = Date.now() - start
+      recordLatency(elapsed)
       recordSuccess()
       return completion.choices[0]?.message?.content ?? ''
     } catch (err) {
       lastError = err as Error
-      if (attempt < 1) console.warn(`[ai] Intento ${attempt + 1}/2 falló:`, lastError.message)
-      if ((err as { status?: number }).status === 429 && attempt === 0) {
-        await new Promise(r => setTimeout(r, 2000))
+      const status = (err as { status?: number }).status
+
+      if (status === 429) {
+        const backoff = Math.min(2000 * Math.pow(2, attempt), 16000)
+        console.warn(`[ai] Rate limited (429). Intento ${attempt + 1}/${maxRetries + 1}. Esperando ${backoff}ms.`)
+        await new Promise(r => setTimeout(r, backoff))
+        continue
+      }
+
+      if (status === 500 || status === 503) {
+        if (attempt < maxRetries) {
+          const backoff = 1000 * Math.pow(2, attempt)
+          console.warn(`[ai] Error servidor (${status}). Intento ${attempt + 1}/${maxRetries + 1}.`)
+          await new Promise(r => setTimeout(r, backoff))
+          continue
+        }
+      }
+
+      // Network error o timeout
+      if (!status && attempt < maxRetries) {
+        console.warn(`[ai] Error de red: ${lastError.message}. Intento ${attempt + 1}/${maxRetries + 1}.`)
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
+        continue
+      }
+
+      if (attempt < maxRetries) {
+        console.warn(`[ai] Intento ${attempt + 1}/${maxRetries + 1} falló: ${lastError.message}`)
+        await new Promise(r => setTimeout(r, 500))
       }
     }
   }
@@ -167,6 +279,11 @@ export const ai = {
       return 'Por favor, espera un momento antes de enviar otro mensaje.'
     }
     lastCall.set(phone, now)
+
+    // Health check proactivo antes de usar
+    if (circuitState === 'closed' || circuitState === 'half-open') {
+      void proactiveHealthCheck()
+    }
 
     let history = conversations.get(phone) ?? []
 
@@ -202,5 +319,9 @@ export const ai = {
   clearHistory(phone: string): void {
     conversations.delete(phone)
     aiStore.clearHistory(phone)
+  },
+
+  getHealth() {
+    return getAiHealth()
   },
 }

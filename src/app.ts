@@ -8,11 +8,11 @@ import { database } from './database/index.js'
 import { ai } from './services/ai.js'
 import { messageLog } from './services/message-log.js'
 import { dashboard } from './services/store.js'
-import { leads, outbox } from './services/store.js'
+import { leads, outbox, stopBufferFlush } from './services/store.js'
 import { authGuard } from './middleware/auth.js'
 import { healthCheck } from './middleware/health.js'
-import { startOutboxWorker, stopOutboxWorker } from './services/outbox.js'
-import { initDb, closeDb } from './database/sqlite.js'
+import { startOutboxWorker, stopOutboxWorker, getOutboxMetrics } from './services/outbox.js'
+import { initDb, closeDb, verifyDbHealth, isDbHealthy } from './database/sqlite.js'
 import { pipeline } from './services/pipeline.js'
 import { leadScorer } from './services/lead-scorer.js'
 import { objectionDetector } from './services/objection-detector.js'
@@ -27,12 +27,16 @@ import { conversationContext } from './services/conversation-context.js'
 import { normalizeLeadId } from './services/lead-id.js'
 import { setProvider, resolvePendingLids, setupLidListener } from './services/lid-resolver.js'
 import { humanReply } from './services/human-presence.js'
-import { waitForBurst } from './services/message-aggregator.js'
+import { waitForBurst, dropAll } from './services/message-aggregator.js'
+import { setupReconnectHandler, getWhatsAppHealth } from './provider/index.js'
 
-// Deduplicación de mensajes
+// Estado global
+let draining = false
+
+// Deduplicación de mensajes (persistida cada 30s)
 const seenMessages = new Map<string, number>()
 const DEDUP_WINDOW_MS = 10_000
-setInterval(() => {
+const dedupCleanup = setInterval(() => {
   const now = Date.now()
   for (const [key, ts] of seenMessages) {
     if (now - ts > DEDUP_WINDOW_MS) seenMessages.delete(key)
@@ -71,6 +75,9 @@ const PORT = +(process.env.PORT ?? 3008)
 const dashPath = join(process.cwd(), 'public', 'dashboard.html')
 const dashHtml = existsSync(dashPath) ? readFileSync(dashPath, 'utf8') : '<h1>Dashboard no disponible</h1><p>El archivo public/dashboard.html no existe.</p>'
 
+// Limpieza de timers
+const timers: ReturnType<typeof setInterval>[] = [dedupCleanup]
+
 const main = async () => {
   if (!process.env.GEMINI_API_KEY) {
     console.error('[CEE] ERROR: GEMINI_API_KEY no está definida en .env.local')
@@ -97,9 +104,39 @@ const main = async () => {
     { extensions: { ai, messageLog, pipeline, leadScorer, objectionDetector, urgencyDetector, tagEngine, templates, decision, moderation, metrics, intentRouter, conversationContext, humanPresence, aggregator: { waitForBurst } } }
   )
 
-  provider.server.get('/health', healthCheck)
+  // Health check enriquecido
+  provider.server.get('/health', async (_req: unknown, res: { writeHead: (c: number, h: Record<string, string>) => void; end: (s: string) => void }) => {
+    const dbHealth = verifyDbHealth()
+    const outboxMetrics = getOutboxMetrics()
+    const waHealth = getWhatsAppHealth()
+    const aiHealth = ai.getHealth()
+    const ctxCache = conversationContext.getCacheStats()
 
-  provider.server.get('/dashboard', async (req: unknown, res: { end: (s: string) => void }) => {
+    const healthy = dbHealth.healthy && waHealth.state === 'connected'
+
+    const status = {
+      status: healthy ? 'ok' : 'degraded',
+      uptime: process.uptime(),
+      draining,
+      db: dbHealth,
+      outbox: outboxMetrics,
+      whatsapp: waHealth,
+      ai: aiHealth,
+      cache: ctxCache,
+      memory: {
+        dedupSize: seenMessages.size,
+        rateLimitSize: rateLimitMap.size,
+      },
+      gemini: process.env.GEMINI_API_KEY ? 'configured' : 'missing',
+      timestamp: new Date().toISOString(),
+    }
+
+    const statusCode = healthy ? 200 : 503
+    res.writeHead(statusCode, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify(status))
+  })
+
+  provider.server.get('/dashboard', async (_req: unknown, res: { end: (s: string) => void }) => {
     res.end(dashHtml)
   })
 
@@ -111,11 +148,24 @@ const main = async () => {
       return res.end(JSON.stringify({ error: 'Demasiadas solicitudes. Intenta en 15 minutos.' }))
     }
     const conversations = dashboard.getAll()
+    const outboxMetrics = getOutboxMetrics()
+    const dbHealth = verifyDbHealth()
+    const waHealth = getWhatsAppHealth()
+    const aiHealth = ai.getHealth()
     res.writeHead(200, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ conversations }))
+    res.end(JSON.stringify({
+      conversations,
+      system: {
+        dbHealthy: dbHealth.healthy,
+        draining,
+        whatsapp: waHealth,
+        ai: aiHealth,
+        outbox: outboxMetrics,
+      },
+    }))
   })
 
-  provider.server.post('/api/dashboard/mode', handleCtx(async (bot, req: { body: { phone: string; mode: string } }, res: { writeHead: (c: number, h: Record<string, string>) => void; end: (s: string) => void }) => {
+  provider.server.post('/api/dashboard/mode', handleCtx(async (_bot, req: { body: { phone: string; mode: string } }, res: { writeHead: (c: number, h: Record<string, string>) => void; end: (s: string) => void }) => {
     if (!authGuard(req as unknown as { url?: string; headers?: Record<string, string> }, res)) return
     const ip = (req as Record<string, unknown>).socket ? ((req as Record<string, unknown>).socket as Record<string, unknown>).remoteAddress as string : 'unknown'
     if (!checkRateLimit(ip)) {
@@ -182,8 +232,8 @@ const main = async () => {
   }))
 
   await initDb()
+  setupReconnectHandler()
 
-  // Configurar resolución de @lid
   setProvider(provider)
   void resolvePendingLids().then(n => {
     if (n > 0) console.log(`[LID] ${n} LIDs resueltos en startup.`)
@@ -194,18 +244,56 @@ const main = async () => {
   httpServer(PORT)
 }
 
-const shutdown = (signal: string) => {
-  console.log(`[CEE] Recibido ${signal}. Cerrando limpiamente...`)
+const shutdown = async (signal: string) => {
+  console.log(`[CEE] Recibido ${signal}. Iniciando apagado graceful...`)
+  draining = true
+
+  // 1. Limpiar buffers de mensajes pendientes
+  dropAll()
+  console.log('[CEE] Buffers de mensajes limpiados.')
+
+  // 2. Esperar que mensajes en vuelo terminen
+  await new Promise(r => setTimeout(r, 3000))
+  console.log('[CEE] 3s de drenaje completados.')
+
+  // 3. Detener workers
   stopOutboxWorker()
+  stopBufferFlush()
+
+  // 4. Limpiar timers globales
+  for (const timer of timers) {
+    clearInterval(timer)
+  }
+
+  // 5. Verificar integridad final y cerrar DB
+  const finalHealth = verifyDbHealth()
+  console.log(`[CEE] DB health final: ${finalHealth.healthy ? 'ok' : 'degraded: ' + finalHealth.details}`)
   closeDb()
+
+  console.log('[CEE] Apagado completado.')
   process.exit(0)
 }
 
-process.on('SIGTERM', () => shutdown('SIGTERM'))
-process.on('SIGINT', () => shutdown('SIGINT'))
+process.on('SIGTERM', () => { void shutdown('SIGTERM') })
+process.on('SIGINT', () => { void shutdown('SIGINT') })
+process.on('unhandledRejection', (reason) => {
+  console.error('[CEE] Unhandled rejection:', reason)
+})
+process.on('uncaughtException', (err) => {
+  console.error('[CEE] Uncaught exception:', err.message)
+  if (!draining) {
+    draining = true
+    stopOutboxWorker()
+    stopBufferFlush()
+    closeDb()
+    process.exit(1)
+  }
+})
 
 main().catch(err => {
   console.error('[CEE] Error fatal:', err?.message ?? err)
   stopOutboxWorker()
+  stopBufferFlush()
+  closeDb()
   process.exit(1)
 })

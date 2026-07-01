@@ -1,4 +1,4 @@
-import { getDb, saveDb } from '../database/sqlite.js'
+import { getDb, saveDb, isDbHealthy } from '../database/sqlite.js'
 import { normalizeLeadId } from './lead-id.js'
 
 interface ConversationData {
@@ -11,29 +11,92 @@ interface ConversationData {
   lastPrompt?: string
 }
 
+// Cache LRU en memoria para evitar queries SQLite repetidos
+const cacheTTL = 5 * 60 * 1000
+interface CacheEntry {
+  data: ConversationData
+  ts: number
+}
+const memoryCache = new Map<string, CacheEntry>()
+let cacheHits = 0
+let cacheMisses = 0
+
+function cacheKey(phone: string): string {
+  return normalizeLeadId(phone)
+}
+
+function getFromCache(phone: string): ConversationData | null {
+  const key = cacheKey(phone)
+  const entry = memoryCache.get(key)
+  if (entry && Date.now() - entry.ts < cacheTTL) {
+    cacheHits++
+    return entry.data
+  }
+  if (entry) {
+    memoryCache.delete(key)
+  }
+  cacheMisses++
+  return null
+}
+
+function setCache(phone: string, data: ConversationData): void {
+  const key = cacheKey(phone)
+  memoryCache.set(key, { data, ts: Date.now() })
+}
+
+function invalidateCache(phone: string): void {
+  memoryCache.delete(cacheKey(phone))
+}
+
 export const conversationContext = {
   get(phone: string): ConversationData {
-    const normalized = normalizeLeadId(phone)
-    const stmt = getDb().prepare('SELECT data_json FROM conv_state WHERE phone = ?')
-    stmt.bind([normalized])
-    if (stmt.step()) {
-      const row = stmt.getAsObject() as { data_json: string }
+    const cached = getFromCache(phone)
+    if (cached) return cached
+
+    try {
+      if (!isDbHealthy()) {
+        return { lastQuestions: [], hostilityCount: 0, loopCount: 0, lastResponse: '' }
+      }
+
+      const normalized = normalizeLeadId(phone)
+      const stmt = getDb().prepare('SELECT data_json FROM conv_state WHERE phone = ?')
+      stmt.bind([normalized])
+      if (stmt.step()) {
+        const row = stmt.getAsObject() as { data_json: string }
+        stmt.free()
+        const data = JSON.parse(row.data_json) as ConversationData
+        setCache(phone, data)
+        return data
+      }
       stmt.free()
-      try { return JSON.parse(row.data_json) } catch { /* corrupto, usar default */ }
+    } catch (err) {
+      console.error('[ctx] Error obteniendo contexto:', (err as Error)?.message ?? err)
     }
-    stmt.free()
-    return { lastQuestions: [], hostilityCount: 0, loopCount: 0, lastResponse: '' }
+
+    const defaultData = { lastQuestions: [], hostilityCount: 0, loopCount: 0, lastResponse: '' }
+    setCache(phone, defaultData)
+    return defaultData
   },
 
   set(phone: string, data: Partial<ConversationData>) {
-    const normalized = normalizeLeadId(phone)
     const current = this.get(phone)
     const merged = { ...current, ...data }
+    setCache(phone, merged)
 
-    getDb().run(`INSERT INTO conv_state (phone, state, data_json, updated_at) VALUES (?, 'IDLE', ?, ?)
-      ON CONFLICT(phone) DO UPDATE SET data_json = excluded.data_json, updated_at = excluded.updated_at`,
-      [normalized, JSON.stringify(merged), new Date().toISOString()])
-    saveDb()
+    try {
+      if (!isDbHealthy()) {
+        console.warn('[ctx] DB no disponible. Contexto solo en memoria para', phone)
+        return
+      }
+
+      const normalized = normalizeLeadId(phone)
+      getDb().run(`INSERT INTO conv_state (phone, state, data_json, updated_at) VALUES (?, 'IDLE', ?, ?)
+        ON CONFLICT(phone) DO UPDATE SET data_json = excluded.data_json, updated_at = excluded.updated_at`,
+        [normalized, JSON.stringify(merged), new Date().toISOString()])
+      saveDb()
+    } catch (err) {
+      console.error('[ctx] Error guardando contexto:', (err as Error)?.message ?? err)
+    }
   },
 
   recordQuestion(phone: string, question: string) {
@@ -67,9 +130,15 @@ export const conversationContext = {
   },
 
   reset(phone: string) {
-    const normalized = normalizeLeadId(phone)
-    getDb().run('DELETE FROM conv_state WHERE phone = ?', [normalized])
-    saveDb()
+    invalidateCache(phone)
+    try {
+      if (!isDbHealthy()) return
+      const normalized = normalizeLeadId(phone)
+      getDb().run('DELETE FROM conv_state WHERE phone = ?', [normalized])
+      saveDb()
+    } catch (err) {
+      console.error('[ctx] Error reseteando contexto:', (err as Error)?.message ?? err)
+    }
   },
 
   isFrustrated(phone: string): boolean {
@@ -79,5 +148,9 @@ export const conversationContext = {
 
   recordFlowPosition(phone: string, flow: string, prompt: string) {
     this.set(phone, { currentFlow: flow, lastPrompt: prompt })
+  },
+
+  getCacheStats() {
+    return { hits: cacheHits, misses: cacheMisses, size: memoryCache.size }
   },
 }

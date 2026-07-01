@@ -1,12 +1,71 @@
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js'
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, copyFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const DATA_DIR = join(process.cwd(), 'data')
 const DB_PATH = join(DATA_DIR, 'cee.db')
+const DB_BACKUP_PATH = join(DATA_DIR, 'cee.db.bak')
+const DB_WAL_PATH = DB_PATH + '-wal'
+const DB_SHM_PATH = DB_PATH + '-shm'
 
 let _db: SqlJsDatabase | null = null
 let saveTimer: ReturnType<typeof setInterval> | null = null
+let _healthy = false
+let _lastSaveOk = true
+
+export function isDbHealthy(): boolean {
+  if (!_db) return false
+  return _healthy && _lastSaveOk
+}
+
+async function tryBackupExistingDb(): Promise<boolean> {
+  try {
+    if (!existsSync(DB_PATH)) return true
+
+    const SQL = await initSqlJs()
+    const buffer = readFileSync(DB_PATH)
+    const testDb = new SQL.Database(buffer)
+    const results: Array<{ ok: string }> = []
+    testDb.exec('PRAGMA integrity_check')
+    const stmt = testDb.prepare('PRAGMA integrity_check')
+    while (stmt.step()) {
+      results.push(stmt.getAsObject() as { ok: string })
+    }
+    stmt.free()
+
+    const integrityOk = results.length === 1 && results[0].ok === 'ok'
+    testDb.close()
+
+    if (integrityOk) {
+      // Crear backup antes de cargar
+      copyFileSync(DB_PATH, DB_BACKUP_PATH)
+      console.log('[DB] Backup creado: cee.db.bak')
+      return true
+    }
+
+    // DB corrupta → renombrar y crear nueva
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const corruptPath = join(DATA_DIR, `cee.db.corrupt.${timestamp}`)
+    renameSync(DB_PATH, corruptPath)
+    console.warn(`[DB] Base de datos corrupta detectada. Renombrada a: ${corruptPath}`)
+
+    // Intentar restaurar desde backup
+    if (existsSync(DB_BACKUP_PATH)) {
+      copyFileSync(DB_BACKUP_PATH, DB_PATH)
+      console.log('[DB] Restaurado desde backup: cee.db.bak')
+      return true
+    }
+
+    // Limpiar WAL/SHM si existen
+    try { if (existsSync(DB_WAL_PATH)) renameSync(DB_WAL_PATH, DB_WAL_PATH + '.old') } catch { /* ok */ }
+    try { if (existsSync(DB_SHM_PATH)) renameSync(DB_SHM_PATH, DB_SHM_PATH + '.old') } catch { /* ok */ }
+
+    return false
+  } catch (err) {
+    console.error('[DB] Error verificando integridad:', (err as Error)?.message ?? err)
+    return false
+  }
+}
 
 export async function initDb(): Promise<SqlJsDatabase> {
   if (_db) return _db
@@ -14,16 +73,44 @@ export async function initDb(): Promise<SqlJsDatabase> {
   mkdirSync(DATA_DIR, { recursive: true })
   const SQL = await initSqlJs()
 
+  // Verificar integridad antes de cargar
+  if (existsSync(DB_PATH)) {
+    const integrityOk = await tryBackupExistingDb()
+    if (!integrityOk) {
+      console.warn('[DB] No se pudo recuperar la DB. Creando nueva.')
+    }
+  }
+
   let buffer: Uint8Array | undefined
   if (existsSync(DB_PATH)) {
-    buffer = readFileSync(DB_PATH)
-    _db = new SQL.Database(buffer)
+    try {
+      buffer = readFileSync(DB_PATH)
+      _db = new SQL.Database(buffer)
+    } catch (err) {
+      console.error('[DB] Error cargando base de datos:', (err as Error)?.message ?? err)
+      // Intentar desde backup
+      if (existsSync(DB_BACKUP_PATH)) {
+        try {
+          buffer = readFileSync(DB_BACKUP_PATH)
+          _db = new SQL.Database(buffer)
+          writeFileSync(DB_PATH, buffer)
+          console.log('[DB] Restaurado desde backup tras error de carga.')
+        } catch {
+          _db = new SQL.Database()
+          console.warn('[DB] Backup también corrupto. Creando BD nueva.')
+        }
+      } else {
+        _db = new SQL.Database()
+        console.warn('[DB] Sin backup disponible. Creando BD nueva.')
+      }
+    }
   } else {
     _db = new SQL.Database()
   }
 
   _db.run('PRAGMA journal_mode = WAL')
   _db.run('PRAGMA foreign_keys = ON')
+  _db.run('PRAGMA busy_timeout = 5000')
 
   _db.exec(`
     CREATE TABLE IF NOT EXISTS leads (
@@ -95,10 +182,12 @@ export async function initDb(): Promise<SqlJsDatabase> {
     );
   `)
 
-  // Agregar columna next_retry_at si no existe (base de datos creada antes de esta versión)
+  // Agregar columnas faltantes (compatibilidad con versiones anteriores)
   try { _db.exec('ALTER TABLE outbox ADD COLUMN next_retry_at TEXT') } catch { /* ya existe */ }
   try { _db.exec('ALTER TABLE dashboard_messages ADD COLUMN metadata TEXT') } catch { /* ya existe */ }
 
+  _healthy = true
+  _lastSaveOk = true
   saveDb()
 
   // Ejecutar migraciones
@@ -109,9 +198,18 @@ export async function initDb(): Promise<SqlJsDatabase> {
     console.warn('[DB] Error ejecutando migraciones:', (err as Error)?.message ?? err)
   }
 
-  // Auto-save every 10 seconds
+  // Auto-save cada 10 segundos
   if (!saveTimer) {
-    saveTimer = setInterval(saveDb, 10_000)
+    saveTimer = setInterval(() => {
+      if (!_db) return
+      try {
+        saveDb()
+        _lastSaveOk = true
+      } catch (err) {
+        console.error('[DB] Error en auto-save:', (err as Error)?.message ?? err)
+        _lastSaveOk = false
+      }
+    }, 10_000)
   }
 
   return _db
@@ -125,8 +223,36 @@ export function getDb(): SqlJsDatabase {
 export function saveDb(): void {
   if (!_db) return
   const data = _db.export()
+
+  // Guardar backup antes de sobrescribir
+  try {
+    if (existsSync(DB_PATH)) {
+      copyFileSync(DB_PATH, DB_BACKUP_PATH)
+    }
+  } catch { /* backup no crítico */ }
+
   const buffer = Buffer.from(data)
   writeFileSync(DB_PATH, buffer)
+  _lastSaveOk = true
+}
+
+export function verifyDbHealth(): { healthy: boolean; details: string } {
+  if (!_db) return { healthy: false, details: 'DB no inicializada' }
+  try {
+    const results: Array<{ ok: string }> = []
+    _db.exec('PRAGMA integrity_check')
+    const stmt = _db.prepare('PRAGMA integrity_check')
+    while (stmt.step()) {
+      results.push(stmt.getAsObject() as { ok: string })
+    }
+    stmt.free()
+    const healthy = results.length === 1 && results[0].ok === 'ok'
+    _healthy = healthy
+    return { healthy, details: healthy ? 'ok' : results.map(r => r.ok).join(', ') }
+  } catch (err) {
+    _healthy = false
+    return { healthy: false, details: (err as Error)?.message ?? 'error desconocido' }
+  }
 }
 
 export function closeDb(): void {
@@ -135,8 +261,16 @@ export function closeDb(): void {
     saveTimer = null
   }
   if (_db) {
-    saveDb()
-    _db.close()
+    try {
+      saveDb()
+    } catch (err) {
+      console.error('[DB] Error en saveDb durante cierre:', (err as Error)?.message ?? err)
+    }
+    try {
+      _db.close()
+    } catch { /* ok */ }
     _db = null
+    _healthy = false
+    _lastSaveOk = false
   }
 }

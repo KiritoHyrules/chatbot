@@ -132,3 +132,14 @@ export function drop(phone: string): void {
   }
   buffers.delete(phone)
 }
+
+export function dropAll(): void {
+  for (const [phone, entry] of buffers) {
+    if (entry.timer) clearTimeout(entry.timer)
+    if (entry._pendingResolve) {
+      entry._pendingResolve(null)
+    }
+  }
+  buffers.clear()
+  console.log('[AGG] Todos los buffers limpiados en shutdown.')
+}

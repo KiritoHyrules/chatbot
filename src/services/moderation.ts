@@ -1,4 +1,4 @@
-const BLOCKED_WORDS = [
+const BLOCKED_SET = new Set([
   'mamasita', 'mamacita', 'perra', 'perrita', 'kchar', 'cachar',
   'culo', 'puta', 'puto', 'mierda', 'pene', 'nepe', 'vagina',
   'sexo', 'sexual', 'tetas', 'culos', 'porno', 'desnudo',
@@ -13,17 +13,17 @@ const BLOCKED_WORDS = [
   'gilipollas', 'pelotudo', 'boludo', 'mamón',
   'mrd', 'mrda', 'ctmr', 'chcha', 'prra',
   'webon', 'webón', 'callate', 'cállate', 'calla',
-  'oe', 'perro', 'mrd', 'mrd',
+  'oe', 'perro',
   'xd', 'pinche', 'chingada', 'chingado',
-]
+])
 
 const MODERATION_RESPONSE = 'Soy el asistente profesional del *Centro de Especialización Ejecutiva* de la UNI. ¿En qué puedo ayudarte con información académica?'
 
 export const moderation = {
   check(message: string): { blocked: boolean; response?: string } {
     const clean = message.toLowerCase().replace(/[^a-záéíóúñ0-9\s]/g, '')
-    for (const word of BLOCKED_WORDS) {
-      if (clean.includes(word)) {
+    for (const word of clean.split(/\s+/)) {
+      if (BLOCKED_SET.has(word)) {
         return { blocked: true, response: MODERATION_RESPONSE }
       }
     }
