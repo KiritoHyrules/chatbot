@@ -1,5 +1,7 @@
 import { getDb, saveDb, isDbHealthy } from '../database/sqlite.js'
 import { randomUUID } from 'node:crypto'
+import { child } from '../logger.js'
+const log = child('store')
 
 function db() { return getDb() }
 
@@ -20,7 +22,7 @@ function startBufferFlush() {
         db().run(item.sql, item.params)
         flushed++
       } catch (err) {
-        console.error('[store] Error reenviando query del buffer:', (err as Error)?.message ?? err)
+        log.error('Error reenviando query del buffer: %s', (err as Error)?.message ?? err)
         writeBuffer.push(item)
       }
     }
@@ -28,7 +30,7 @@ function startBufferFlush() {
       try { saveDb() } catch { /* se reintentará */ }
       dbAvailable = true
     }
-    if (flushed > 0) console.log(`[store] Buffer flush: ${flushed} queries recuperadas`)
+    if (flushed > 0) log.info('Buffer flush: %d queries recuperadas', flushed)
   }, 15_000)
 }
 
@@ -40,7 +42,7 @@ function run(sql: string, params: unknown[] = []) {
   try {
     db().run(sql, params)
   } catch (err) {
-    console.error('[store] Error ejecutando query:', (err as Error)?.message ?? err, sql.slice(0, 80))
+    log.error('Error ejecutando query: %s %s', (err as Error)?.message ?? err, sql.slice(0, 80))
     dbAvailable = false
     writeBuffer.push({ sql, params })
     startBufferFlush()
@@ -49,7 +51,7 @@ function run(sql: string, params: unknown[] = []) {
   try {
     saveDb()
   } catch (err) {
-    console.warn('[store] Error en saveDb:', (err as Error)?.message ?? err)
+    log.warn('Error en saveDb: %s', (err as Error)?.message ?? err)
     setTimeout(() => {
       try { saveDb() } catch { /* próximo ciclo */ }
     }, 500)
@@ -77,7 +79,7 @@ function get<T>(sql: string, params: unknown[] = []): T | undefined {
     stmt.free()
     return undefined
   } catch (err) {
-    console.error('[store] Error en get:', (err as Error)?.message ?? err, sql.slice(0, 80))
+    log.error('Error en get: %s %s', (err as Error)?.message ?? err, sql.slice(0, 80))
     return undefined
   }
 }
@@ -93,7 +95,7 @@ function all<T>(sql: string, params: unknown[] = []): T[] {
     stmt.free()
     return results
   } catch (err) {
-    console.error('[store] Error en all:', (err as Error)?.message ?? err, sql.slice(0, 80))
+    log.error('Error en all: %s %s', (err as Error)?.message ?? err, sql.slice(0, 80))
     return []
   }
 }
@@ -128,7 +130,7 @@ export const leads = {
       lead.dealStage ?? null, lead.classificationJson ?? null, lead.createdAt,
     ])
     if (!result.ok) {
-      console.error('[store] Error creando lead:', result.error)
+      log.error('Error creando lead: %s', result.error)
     }
     return lead
   },

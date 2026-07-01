@@ -1,6 +1,8 @@
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, copyFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { child } from '../logger.js'
+const log = child('sqlite')
 
 const DATA_DIR = join(process.cwd(), 'data')
 const DB_PATH = join(DATA_DIR, 'cee.db')
@@ -39,7 +41,7 @@ async function tryBackupExistingDb(): Promise<boolean> {
     if (integrityOk) {
       // Crear backup antes de cargar
       copyFileSync(DB_PATH, DB_BACKUP_PATH)
-      console.log('[DB] Backup creado: cee.db.bak')
+      log.info('Backup creado: cee.db.bak')
       return true
     }
 
@@ -47,12 +49,12 @@ async function tryBackupExistingDb(): Promise<boolean> {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
     const corruptPath = join(DATA_DIR, `cee.db.corrupt.${timestamp}`)
     renameSync(DB_PATH, corruptPath)
-    console.warn(`[DB] Base de datos corrupta detectada. Renombrada a: ${corruptPath}`)
+    log.warn(`Base de datos corrupta detectada. Renombrada a: ${corruptPath}`)
 
     // Intentar restaurar desde backup
     if (existsSync(DB_BACKUP_PATH)) {
       copyFileSync(DB_BACKUP_PATH, DB_PATH)
-      console.log('[DB] Restaurado desde backup: cee.db.bak')
+      log.info('Restaurado desde backup: cee.db.bak')
       return true
     }
 
@@ -62,7 +64,7 @@ async function tryBackupExistingDb(): Promise<boolean> {
 
     return false
   } catch (err) {
-    console.error('[DB] Error verificando integridad:', (err as Error)?.message ?? err)
+    log.error('Error verificando integridad: %s', (err as Error)?.message ?? err)
     return false
   }
 }
@@ -77,7 +79,7 @@ export async function initDb(): Promise<SqlJsDatabase> {
   if (existsSync(DB_PATH)) {
     const integrityOk = await tryBackupExistingDb()
     if (!integrityOk) {
-      console.warn('[DB] No se pudo recuperar la DB. Creando nueva.')
+      log.warn('No se pudo recuperar la DB. Creando nueva.')
     }
   }
 
@@ -87,21 +89,21 @@ export async function initDb(): Promise<SqlJsDatabase> {
       buffer = readFileSync(DB_PATH)
       _db = new SQL.Database(buffer)
     } catch (err) {
-      console.error('[DB] Error cargando base de datos:', (err as Error)?.message ?? err)
+      log.error('Error cargando base de datos: %s', (err as Error)?.message ?? err)
       // Intentar desde backup
       if (existsSync(DB_BACKUP_PATH)) {
         try {
           buffer = readFileSync(DB_BACKUP_PATH)
           _db = new SQL.Database(buffer)
           writeFileSync(DB_PATH, buffer)
-          console.log('[DB] Restaurado desde backup tras error de carga.')
+          log.info('Restaurado desde backup tras error de carga.')
         } catch {
           _db = new SQL.Database()
-          console.warn('[DB] Backup también corrupto. Creando BD nueva.')
+          log.warn('Backup también corrupto. Creando BD nueva.')
         }
       } else {
         _db = new SQL.Database()
-        console.warn('[DB] Sin backup disponible. Creando BD nueva.')
+        log.warn('Sin backup disponible. Creando BD nueva.')
       }
     }
   } else {
@@ -195,7 +197,7 @@ export async function initDb(): Promise<SqlJsDatabase> {
     const { migrate001 } = await import('./migrations/001-normalize-lead-ids.js')
     migrate001()
   } catch (err) {
-    console.warn('[DB] Error ejecutando migraciones:', (err as Error)?.message ?? err)
+    log.warn('Error ejecutando migraciones: %s', (err as Error)?.message ?? err)
   }
 
   // Auto-save cada 10 segundos
@@ -206,7 +208,7 @@ export async function initDb(): Promise<SqlJsDatabase> {
         saveDb()
         _lastSaveOk = true
       } catch (err) {
-        console.error('[DB] Error en auto-save:', (err as Error)?.message ?? err)
+        log.error('Error en auto-save: %s', (err as Error)?.message ?? err)
         _lastSaveOk = false
       }
     }, 10_000)
@@ -264,7 +266,7 @@ export function closeDb(): void {
     try {
       saveDb()
     } catch (err) {
-      console.error('[DB] Error en saveDb durante cierre:', (err as Error)?.message ?? err)
+      log.error('Error en saveDb durante cierre: %s', (err as Error)?.message ?? err)
     }
     try {
       _db.close()

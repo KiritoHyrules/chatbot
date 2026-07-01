@@ -1,6 +1,9 @@
 import { createProvider } from '@builderbot/bot'
 import { BaileysProvider as Provider } from '@builderbot/provider-baileys'
 
+import { child } from '../logger.js'
+const log = child('wa')
+
 let reconnectAttempts = 0
 const MAX_RECONNECT_ATTEMPTS = 5
 const RECONNECT_DELAY_MS = 5000
@@ -23,7 +26,7 @@ export function setupReconnectHandler() {
         if (u.connection === 'open') {
           connectionState = 'connected'
           reconnectAttempts = 0
-          console.log('[WA] WhatsApp conectado.')
+          log.info('WhatsApp conectado.')
         }
         if (u.connection === 'close') {
           connectionState = 'disconnected'
@@ -31,16 +34,16 @@ export function setupReconnectHandler() {
           lastDisconnectReason = statusCode ? `status=${statusCode}` : 'unknown'
 
           if (statusCode === 401 || statusCode === 403) {
-            console.error(`[WA] Sesión inválida/expirada (${statusCode}). Se requiere nuevo QR.`)
+            log.error('Sesión inválida/expirada (%d). Se requiere nuevo QR.', statusCode)
             return
           }
 
           if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
             reconnectAttempts++
             const secs = RECONNECT_DELAY_MS / 1000
-            console.warn(`[WA] Desconectado. Reintento ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} en ${secs}s...`)
+            log.warn('Desconectado. Reintento %d/%d en %ds...', reconnectAttempts, MAX_RECONNECT_ATTEMPTS, secs)
           } else {
-            console.error(`[WA] ${MAX_RECONNECT_ATTEMPTS} intentos fallidos. Requiere intervención manual.`)
+            log.error('%d intentos fallidos. Requiere intervención manual.', MAX_RECONNECT_ATTEMPTS)
           }
         }
         if (u.connection === 'connecting') {
@@ -48,10 +51,10 @@ export function setupReconnectHandler() {
         }
       })
     } else {
-      console.warn('[WA] No se pudo registrar listener de reconexión (estructura interna de Baileys cambió).')
+      log.warn('No se pudo registrar listener de reconexión (estructura interna de Baileys cambió).')
     }
   } catch (err) {
-    console.warn('[WA] Error registrando handler de reconexión:', (err as Error)?.message ?? err)
+    log.warn('Error registrando handler de reconexión: %s', (err as Error)?.message ?? err)
   }
 }
 

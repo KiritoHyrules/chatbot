@@ -1,6 +1,9 @@
 const FIRST_MSG_DEBOUNCE_MS = 1500
 const FULL_BURST_WINDOW_MS = 2000
 
+import { child } from '../logger.js'
+const log = child('agg')
+
 interface BufferEntry {
   messages: string[]
   timer: ReturnType<typeof setTimeout> | null
@@ -11,7 +14,7 @@ interface BufferEntry {
 const buffers = new Map<string, BufferEntry>()
 const CRITICAL_COMMANDS = new Set(['cancelar', 'salir', '0'])
 
-console.log('[AGG-MODULE] message-aggregator.ts cargado')
+log.info('message-aggregator.ts cargado')
 
 export function isEnabled(): boolean {
   return process.env.ENABLE_MESSAGE_AGGREGATOR !== 'false'
@@ -48,7 +51,7 @@ export function waitForBurst(phone: string, message: string, flow?: string): Pro
     const oldResolve = existing._pendingResolve
     existing._pendingResolve = null
     oldResolve(null)
-    console.log('[AGG-CANCEL]', phone, '(reemplazada por nueva burst)')
+    log.debug('Cancelado: %s (reemplazada por nueva burst)', phone)
   }
 
   // Agregar o crear entrada
@@ -69,7 +72,7 @@ export function waitForBurst(phone: string, message: string, flow?: string): Pro
     const windowMs = FIRST_MSG_DEBOUNCE_MS
     entry.timer = setTimeout(() => doFlush(phone), windowMs)
     buffers.set(phone, entry)
-    console.log('[AGG-WAIT]', phone, 'first msg, windowMs=' + windowMs, 'msg="' + message.slice(0, 30) + '"')
+    log.debug('Wait: %s first msg, windowMs=%d msg="%s"', phone, windowMs, message.slice(0, 30))
   }
 
   return new Promise((resolve) => {
@@ -97,7 +100,7 @@ function doFlush(phone: string): void {
   const resolve = entry._pendingResolve
   buffers.delete(phone)
 
-  console.log('[AGG-RESOLVE]', phone, 'aggregated="' + aggregated.slice(0, 60) + '"')
+  log.debug('Resolve: %s aggregated="%s"', phone, aggregated.slice(0, 60))
   if (resolve) {
     resolve(aggregated)
   }
@@ -141,5 +144,5 @@ export function dropAll(): void {
     }
   }
   buffers.clear()
-  console.log('[AGG] Todos los buffers limpiados en shutdown.')
+  log.info('Todos los buffers limpiados en shutdown.')
 }

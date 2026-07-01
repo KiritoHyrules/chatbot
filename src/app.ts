@@ -2,6 +2,8 @@ import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createBot } from '@builderbot/bot'
+import { child } from './logger.js'
+const log = child('app')
 import { flow } from './flows/index.js'
 import { provider } from './provider/index.js'
 import { database } from './database/index.js'
@@ -80,8 +82,8 @@ const timers: ReturnType<typeof setInterval>[] = [dedupCleanup]
 
 const main = async () => {
   if (!process.env.GEMINI_API_KEY) {
-    console.error('[CEE] ERROR: GEMINI_API_KEY no está definida en .env.local')
-    console.error('[CEE] El FAQ y las respuestas con IA no funcionarán.')
+    log.error('GEMINI_API_KEY no está definida en .env.local')
+    log.error('El FAQ y las respuestas con IA no funcionarán.')
   }
 
   if (!process.env.DASHBOARD_SECRET) {
@@ -89,9 +91,7 @@ const main = async () => {
     const generated = randomUUID()
     process.env.DASHBOARD_SECRET = generated
     writeFileSync(tokenPath, generated, 'utf8')
-    console.warn('[CEE] DASHBOARD_SECRET no definido. Token generado:')
-    console.warn(`[CEE]   ${generated}`)
-    console.warn(`[CEE]   Guardado en: ${tokenPath}`)
+    log.warn('DASHBOARD_SECRET no definido. Token generado y guardado en: %s', tokenPath)
   }
 
   const humanPresence = {
@@ -236,7 +236,7 @@ const main = async () => {
 
   setProvider(provider)
   void resolvePendingLids().then(n => {
-    if (n > 0) console.log(`[LID] ${n} LIDs resueltos en startup.`)
+    if (n > 0) log.info('%d LIDs resueltos en startup.', n)
   })
   void setupLidListener()
 
@@ -245,16 +245,16 @@ const main = async () => {
 }
 
 const shutdown = async (signal: string) => {
-  console.log(`[CEE] Recibido ${signal}. Iniciando apagado graceful...`)
+  log.info('Recibido %s. Iniciando apagado graceful...', signal)
   draining = true
 
   // 1. Limpiar buffers de mensajes pendientes
   dropAll()
-  console.log('[CEE] Buffers de mensajes limpiados.')
+  log.info('Buffers de mensajes limpiados.')
 
   // 2. Esperar que mensajes en vuelo terminen
   await new Promise(r => setTimeout(r, 3000))
-  console.log('[CEE] 3s de drenaje completados.')
+  log.info('3s de drenaje completados.')
 
   // 3. Detener workers
   stopOutboxWorker()
@@ -267,20 +267,20 @@ const shutdown = async (signal: string) => {
 
   // 5. Verificar integridad final y cerrar DB
   const finalHealth = verifyDbHealth()
-  console.log(`[CEE] DB health final: ${finalHealth.healthy ? 'ok' : 'degraded: ' + finalHealth.details}`)
+  log.info('DB health final: %s', finalHealth.healthy ? 'ok' : 'degraded: ' + finalHealth.details)
   closeDb()
 
-  console.log('[CEE] Apagado completado.')
+  log.info('Apagado completado.')
   process.exit(0)
 }
 
 process.on('SIGTERM', () => { void shutdown('SIGTERM') })
 process.on('SIGINT', () => { void shutdown('SIGINT') })
 process.on('unhandledRejection', (reason) => {
-  console.error('[CEE] Unhandled rejection:', reason)
+  log.error('Unhandled rejection: %s', reason)
 })
 process.on('uncaughtException', (err) => {
-  console.error('[CEE] Uncaught exception:', err.message)
+  log.error('Uncaught exception: %s', err.message)
   if (!draining) {
     draining = true
     stopOutboxWorker()
@@ -291,7 +291,7 @@ process.on('uncaughtException', (err) => {
 })
 
 main().catch(err => {
-  console.error('[CEE] Error fatal:', err?.message ?? err)
+  log.error('Error fatal: %s', err?.message ?? err)
   stopOutboxWorker()
   stopBufferFlush()
   closeDb()

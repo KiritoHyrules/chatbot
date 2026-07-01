@@ -1,6 +1,8 @@
 import { createHmac } from 'node:crypto'
 import { outbox as outboxStore } from './store.js'
 import { getWriteBufferSize } from './store.js'
+import { child } from '../logger.js'
+const log = child('outbox')
 
 export function signPayload(body: string): string | null {
   const secret = process.env.N8N_WEBHOOK_SECRET
@@ -36,7 +38,7 @@ function recordN8nFailure(): void {
   }
   if (n8nFailures >= N8N_MAX_FAILURES) {
     n8nCooldownUntil = now + N8N_COOLDOWN_MS
-    console.error(`[OUTBOX] Circuito abierto por ${N8N_COOLDOWN_MS / 1000}s tras ${N8N_MAX_FAILURES} fallos`)
+    log.error('Circuito abierto por %ds tras %d fallos', N8N_COOLDOWN_MS / 1000, N8N_MAX_FAILURES)
   }
 }
 
@@ -66,17 +68,17 @@ export function getOutboxMetrics() {
 export function startOutboxWorker() {
   const n8nUrl = process.env.N8N_WEBHOOK_URL
   if (!n8nUrl) {
-    console.log('[OUTBOX] N8N_WEBHOOK_URL no configurado. Worker no iniciado.')
+    log.info('N8N_WEBHOOK_URL no configurado. Worker no iniciado.')
     return
   }
 
-  console.log(`[OUTBOX] Worker iniciado → ${n8nUrl}`)
+  log.info('Worker iniciado → %s', n8nUrl)
 
   interval = setInterval(async () => {
     if (isN8nCircuitOpen()) {
       const remaining = Math.round((n8nCooldownUntil - Date.now()) / 1000)
       if (remaining % 30 === 0) {
-        console.warn(`[OUTBOX] Circuito abierto. Reintentando en ${remaining}s`)
+        log.warn('Circuito abierto. Reintentando en %ds', remaining)
       }
       return
     }
@@ -129,7 +131,7 @@ export function startOutboxWorker() {
       } catch (err) {
         const isTimeout = (err as Error)?.name === 'AbortError'
         if (isTimeout) {
-          console.warn(`[OUTBOX] Timeout (${FETCH_TIMEOUT_MS / 1000}s) enviando evento ${event.id}`)
+          log.warn('Timeout (%ds) enviando evento %d', FETCH_TIMEOUT_MS / 1000, event.id)
         }
         outboxStore.markFailed(event.id)
         failed++
@@ -141,14 +143,14 @@ export function startOutboxWorker() {
     if (failed > 0 && sent === 0) {
       consecutiveErrors++
       if (consecutiveErrors >= 5) {
-        console.error(`[OUTBOX] ${consecutiveErrors} ciclos consecutivos con errores. n8n puede estar caído.`)
+        log.error('%d ciclos consecutivos con errores. n8n puede estar caído.', consecutiveErrors)
       }
     } else if (sent > 0) {
       consecutiveErrors = 0
     }
 
     if (sent > 0 || failed > 0) {
-      console.log(`[OUTBOX] Ciclo: ${sent} enviados, ${failed} fallidos, ${outboxStore.getPending(100).length} pendientes`)
+      log.info('Ciclo: %d enviados, %d fallidos, %d pendientes', sent, failed, outboxStore.getPending(100).length)
     }
   }, 30_000)
 }
@@ -157,6 +159,6 @@ export function stopOutboxWorker() {
   if (interval) {
     clearInterval(interval)
     interval = null
-    console.log('[OUTBOX] Worker detenido. Total: %d enviados, %d fallidos.', totalSent, totalFailed)
+    log.info('Worker detenido. Total: %d enviados, %d fallidos.', totalSent, totalFailed)
   }
 }

@@ -1,5 +1,7 @@
 import { getDb, saveDb, isDbHealthy } from '../database/sqlite.js'
 import { normalizeLeadId } from './lead-id.js'
+import { child } from '../logger.js'
+const log = child('ctx')
 
 interface ConversationData {
   lastProgramShown?: string
@@ -70,7 +72,7 @@ export const conversationContext = {
       }
       stmt.free()
     } catch (err) {
-      console.error('[ctx] Error obteniendo contexto:', (err as Error)?.message ?? err)
+      log.error('Error obteniendo contexto: %s', (err as Error)?.message ?? err)
     }
 
     const defaultData = { lastQuestions: [], hostilityCount: 0, loopCount: 0, lastResponse: '' }
@@ -85,7 +87,7 @@ export const conversationContext = {
 
     try {
       if (!isDbHealthy()) {
-        console.warn('[ctx] DB no disponible. Contexto solo en memoria para', phone)
+        log.warn('DB no disponible. Contexto solo en memoria para %s', phone)
         return
       }
 
@@ -95,7 +97,7 @@ export const conversationContext = {
         [normalized, JSON.stringify(merged), new Date().toISOString()])
       saveDb()
     } catch (err) {
-      console.error('[ctx] Error guardando contexto:', (err as Error)?.message ?? err)
+      log.error('Error guardando contexto: %s', (err as Error)?.message ?? err)
     }
   },
 
@@ -137,7 +139,7 @@ export const conversationContext = {
       getDb().run('DELETE FROM conv_state WHERE phone = ?', [normalized])
       saveDb()
     } catch (err) {
-      console.error('[ctx] Error reseteando contexto:', (err as Error)?.message ?? err)
+      log.error('Error reseteando contexto: %s', (err as Error)?.message ?? err)
     }
   },
 

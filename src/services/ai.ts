@@ -2,6 +2,8 @@ import OpenAI from 'openai'
 import { LRUCache } from 'lru-cache'
 import { aiStore } from './store.js'
 import { geminiUsage } from './store.js'
+import { child } from '../logger.js'
+const log = child('ai')
 
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/'
 
@@ -47,11 +49,11 @@ function isCircuitOpen(): boolean {
   if (circuitState === 'open') {
     if (cooldownUntil <= Date.now()) {
       circuitState = 'half-open'
-      console.log('[ai] Circuito en half-open. Probando conexión...')
+      log.info('Circuito en half-open. Probando conexión...')
       return false
     }
     if (Math.round((cooldownUntil - Date.now()) / 1000) % 30 === 0) {
-      console.warn('[ai] Circuito abierto. Reintentando en', Math.round((cooldownUntil - Date.now()) / 1000), 's')
+      log.warn('Circuito abierto. Reintentando en %ds', Math.round((cooldownUntil - Date.now()) / 1000))
     }
     return true
   }
@@ -73,14 +75,14 @@ function recordFailure(): void {
   if (circuitState === 'half-open') {
     circuitState = 'open'
     cooldownUntil = now + COOLDOWN_MS
-    console.error('[ai] Half-open falló. Circuito abierto por', COOLDOWN_MS / 1000, 's')
+      log.error('Half-open falló. Circuito abierto por %ds', COOLDOWN_MS / 1000)
     return
   }
 
   if (failures >= MAX_FAILURES && circuitState === 'closed') {
     circuitState = 'open'
     cooldownUntil = now + COOLDOWN_MS
-    console.error('[ai] Circuito abierto por', COOLDOWN_MS / 1000, 's tras', MAX_FAILURES, 'fallos')
+      log.error('Circuito abierto por %ds tras %d fallos', COOLDOWN_MS / 1000, MAX_FAILURES)
   }
   try { geminiUsage.track(false) } catch { /* ok */ }
 }
@@ -232,7 +234,7 @@ async function callWithRetry(messages: ChatMessage[], maxTokens: number): Promis
 
       if (status === 429) {
         const backoff = Math.min(2000 * Math.pow(2, attempt), 16000)
-        console.warn(`[ai] Rate limited (429). Intento ${attempt + 1}/${maxRetries + 1}. Esperando ${backoff}ms.`)
+        log.warn('Rate limited (429). Intento %d/%d. Esperando %dms.', attempt + 1, maxRetries + 1, backoff)
         await new Promise(r => setTimeout(r, backoff))
         continue
       }
@@ -240,7 +242,7 @@ async function callWithRetry(messages: ChatMessage[], maxTokens: number): Promis
       if (status === 500 || status === 503) {
         if (attempt < maxRetries) {
           const backoff = 1000 * Math.pow(2, attempt)
-          console.warn(`[ai] Error servidor (${status}). Intento ${attempt + 1}/${maxRetries + 1}.`)
+          log.warn('Error servidor (%d). Intento %d/%d.', status, attempt + 1, maxRetries + 1)
           await new Promise(r => setTimeout(r, backoff))
           continue
         }
@@ -248,13 +250,13 @@ async function callWithRetry(messages: ChatMessage[], maxTokens: number): Promis
 
       // Network error o timeout
       if (!status && attempt < maxRetries) {
-        console.warn(`[ai] Error de red: ${lastError.message}. Intento ${attempt + 1}/${maxRetries + 1}.`)
+        log.warn('Error de red: %s. Intento %d/%d.', lastError.message, attempt + 1, maxRetries + 1)
         await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
         continue
       }
 
       if (attempt < maxRetries) {
-        console.warn(`[ai] Intento ${attempt + 1}/${maxRetries + 1} falló: ${lastError.message}`)
+        log.warn('Intento %d/%d falló: %s', attempt + 1, maxRetries + 1, lastError.message)
         await new Promise(r => setTimeout(r, 500))
       }
     }

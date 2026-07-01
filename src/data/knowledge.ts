@@ -63,10 +63,65 @@ export const knowledge = {
   },
 }
 
+type ProgramData = typeof knowledge.programs[keyof typeof knowledge.programs]
+
+interface ProgramRule {
+  keywords: string[]
+  buildAnswer: (prog: ProgramData, programName: string) => string
+}
+
+const PROGRAM_RULES: ProgramRule[] = [
+  {
+    keywords: ['duración', 'dura', 'cuánto dura', 'tiempo'],
+    buildAnswer: (p, name) => `El *${name}* dura *${p.duration}*.`,
+  },
+  {
+    keywords: ['requisito', 'necesito', 'perfil'],
+    buildAnswer: (p, name) => `*${name}*: ${p.requirements}`,
+  },
+  {
+    keywords: ['por qué', 'porque', 'por que'],
+    buildAnswer: (p, name) => `*${name}*: ${p.why}`,
+  },
+  {
+    keywords: ['para quién', 'dirigido'],
+    buildAnswer: (p, name) => `*${name}* está dirigido a: ${p.forWho}.`,
+  },
+  {
+    keywords: ['trabajo', 'salida', 'laboral', 'empleo'],
+    buildAnswer: (p, name) => `Con *${name}* podrás trabajar como: ${p.jobs}.`,
+  },
+]
+
+type FaqKey = keyof typeof knowledge.faq
+
+interface FaqRule {
+  keywords: string[]
+  answerKey: FaqKey
+}
+
+const FAQ_RULES: FaqRule[] = [
+  { keywords: ['duración', 'dura', 'cuánto dura', 'tiempo'], answerKey: 'duración' as FaqKey },
+  { keywords: ['costo', 'precio', 'cuánto', 'inversión', 'vale', 'pagar'], answerKey: 'costo' as FaqKey },
+  { keywords: ['inscrib', 'registr', 'matricul', 'formulario'], answerKey: 'inscripción' as FaqKey },
+  { keywords: ['horario', 'horas', 'clase', 'turno'], answerKey: 'horario' as FaqKey },
+  { keywords: ['certific', 'diploma', 'constancia', 'título'], answerKey: 'certificación' as FaqKey },
+  { keywords: ['virtual', 'online', 'remoto', 'distancia'], answerKey: 'virtual' as FaqKey },
+  { keywords: ['descuento', 'promoción', 'beca', 'financiamiento'], answerKey: 'descuento' as FaqKey },
+  { keywords: ['práctica', 'practica', 'laboratorio', 'caso'], answerKey: 'prácticas' as FaqKey },
+]
+
 const answerCache = new LRUCache<string, string | null>({
   max: 500,
   ttl: 1000 * 60 * 60 * 6,
 })
+
+function matchKeywords(q: string, keywords: string[]): boolean {
+  for (const kw of keywords) {
+    if (q.includes(kw)) return true
+  }
+  return false
+}
 
 function findAnswerStatic(query: string, programName?: string | null): string | null {
   const normalized = normalizeQuery(query)
@@ -79,28 +134,28 @@ function findAnswerStatic(query: string, programName?: string | null): string | 
   }
 
   const q = query.toLowerCase()
-
   let result: string | null = null
 
+  // Capa 1: reglas ligadas a un programa específico
   if (programName) {
     const prog = knowledge.programs[programName as keyof typeof knowledge.programs]
     if (prog) {
-      if (q.includes('duración') || q.includes('dura') || q.includes('cuánto dura') || q.includes('tiempo'))
-        result = `El *${programName}* dura *${prog.duration}*.`
-      else if (q.includes('requisito') || q.includes('necesito') || q.includes('perfil'))
-        result = `*${programName}*: ${prog.requirements}`
-      else if (q.includes('por qué') || q.includes('porque') || q.includes('por que'))
-        result = `*${programName}*: ${prog.why}`
-      else if (q.includes('para quién') || q.includes('dirigido'))
-        result = `*${programName}* está dirigido a: ${prog.forWho}.`
-      else if (q.includes('trabajo') || q.includes('salida') || q.includes('laboral') || q.includes('empleo'))
-        result = `Con *${programName}* podrás trabajar como: ${prog.jobs}.`
+      for (const rule of PROGRAM_RULES) {
+        if (matchKeywords(q, rule.keywords)) {
+          result = rule.buildAnswer(prog, programName)
+          break
+        }
+      }
     }
   }
 
+  // Capa 2: FAQ keywords
   if (!result) {
-    for (const [keyword, answer] of Object.entries(knowledge.faq)) {
-      if (q.includes(keyword)) { result = answer; break }
+    for (const rule of FAQ_RULES) {
+      if (matchKeywords(q, rule.keywords)) {
+        result = knowledge.faq[rule.answerKey]
+        break
+      }
     }
   }
 
