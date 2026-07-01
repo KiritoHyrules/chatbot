@@ -32,11 +32,10 @@ export const leadCaptureFlow = addKeyword(utils.setEvent('EVENT_LEAD_CAPTURE'))
     }
     extensions.metrics?.trackFunnelStep(ctx.from, 'name')
     await state.update({ lead_name: input })
-  })
-  .addAction(async (ctx, { flowDynamic, extensions }) => {
-    extensions.conversationContext?.recordFlowPosition?.(ctx.from, 'lead_capture', '¿Me pasas tu DNI?')
-    const msg = extensions.templates?.pick('ask_dni', ctx.from) ?? 'Ahora tu DNI (8 dígitos).'
-    await flowDynamic([{ body: msg, delay: rnd() }])
+
+    // Preguntar DNI inmediatamente después de validar nombre
+    const dniMsg = extensions.templates?.pick('ask_dni', ctx.from) ?? 'Ahora tu DNI (8 dígitos).'
+    await extensions.flowDynamic?.([{ body: dniMsg, delay: rnd() }])
   })
   .addAction({ capture: true, idle: 120000 }, async (ctx, { state, fallBack, endFlow, flowDynamic, extensions }) => {
     const input = ctx.body?.trim() ?? ''
@@ -47,23 +46,14 @@ export const leadCaptureFlow = addKeyword(utils.setEvent('EVENT_LEAD_CAPTURE'))
 
     const normalizedDni = input.replace(/[\s.\-]/g, '')
     if (!/^\d{8}$/.test(normalizedDni)) {
-      const hp = extensions.humanPresence as { reply: Function } | undefined
-      const retry = extensions.templates?.pick('VALIDATION_DNI_RETRY', ctx.from, { input: input.slice(0, 20) })
-        ?? 'El DNI debe tener 8 dígitos. Inténtalo de nuevo.'
-      if (hp) {
-        await hp.reply(ctx, flowDynamic, retry)
-      } else {
-        await flowDynamic([{ body: retry, delay: rnd() }])
-      }
-      return fallBack('¿Me pasas tu DNI? (8 dígitos)')
+      return fallBack('El DNI debe tener 8 dígitos. Inténtalo de nuevo (ej: 12345678).')
     }
     extensions.metrics?.trackFunnelStep(ctx.from, 'dni')
     await state.update({ lead_dni: normalizedDni })
-  })
-  .addAction(async (ctx, { flowDynamic, extensions }) => {
-    extensions.conversationContext?.recordFlowPosition?.(ctx.from, 'lead_capture', '¿Tu número de teléfono?')
-    const msg = extensions.templates?.pick('ask_phone', ctx.from) ?? 'Tu número de teléfono (9 dígitos).'
-    await flowDynamic([{ body: msg, delay: rnd() }])
+
+    // Preguntar teléfono inmediatamente
+    const phoneMsg = extensions.templates?.pick('ask_phone', ctx.from) ?? 'Tu número de teléfono (9 dígitos).'
+    await flowDynamic([{ body: phoneMsg, delay: rnd() }])
   })
   .addAction({ capture: true, idle: 120000 }, async (ctx, { state, fallBack, endFlow, flowDynamic, extensions }) => {
     const input = ctx.body?.trim() ?? ''
@@ -73,23 +63,14 @@ export const leadCaptureFlow = addKeyword(utils.setEvent('EVENT_LEAD_CAPTURE'))
     }
     const digits = input.replace(/\D/g, '')
     if (digits.length < 9) {
-      const hp = extensions.humanPresence as { reply: Function } | undefined
-      const retry = extensions.templates?.pick('VALIDATION_PHONE_RETRY', ctx.from, { input: input.slice(0, 15) })
-        ?? 'El número debe tener al menos 9 dígitos. Inténtalo de nuevo.'
-      if (hp) {
-        await hp.reply(ctx, flowDynamic, retry)
-      } else {
-        await flowDynamic([{ body: retry, delay: rnd() }])
-      }
-      return fallBack('¿Tu número de teléfono? (9 dígitos)')
+      return fallBack('El número debe tener al menos 9 dígitos. Inténtalo de nuevo (ej: 987654321).')
     }
     extensions.metrics?.trackFunnelStep(ctx.from, 'phone')
     await state.update({ lead_phone: digits })
-  })
-  .addAction(async (ctx, { flowDynamic, extensions }) => {
-    extensions.conversationContext?.recordFlowPosition?.(ctx.from, 'lead_capture', '¿Tu correo electrónico?')
-    const msg = extensions.templates?.pick('ask_email', ctx.from) ?? 'Por último, tu correo electrónico.'
-    await flowDynamic([{ body: msg, delay: rnd() }])
+
+    // Preguntar email inmediatamente
+    const emailMsg = extensions.templates?.pick('ask_email', ctx.from) ?? 'Por último, tu correo electrónico.'
+    await flowDynamic([{ body: emailMsg, delay: rnd() }])
   })
   .addAction({ capture: true, idle: 120000 }, async (ctx, { state, fallBack, endFlow, flowDynamic, extensions }) => {
     const input = ctx.body?.trim() ?? ''
@@ -98,15 +79,7 @@ export const leadCaptureFlow = addKeyword(utils.setEvent('EVENT_LEAD_CAPTURE'))
       return endFlow('Registro cancelado. Escribe cualquier mensaje cuando desees retomar.')
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input)) {
-      const hp = extensions.humanPresence as { reply: Function } | undefined
-      const retry = extensions.templates?.pick('VALIDATION_EMAIL_RETRY', ctx.from, { input: input.slice(0, 30) })
-        ?? 'Eso no parece un correo válido. Inténtalo de nuevo (ej: nombre@correo.com).'
-      if (hp) {
-        await hp.reply(ctx, flowDynamic, retry)
-      } else {
-        await flowDynamic([{ body: retry, delay: rnd() }])
-      }
-      return fallBack('¿Tu correo electrónico?')
+      return fallBack('Eso no parece un correo válido. Inténtalo de nuevo (ej: nombre@correo.com).')
     }
 
     // shouldEscape: detectar pregunta fuera de contexto durante captura

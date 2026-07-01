@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { readFileSync, existsSync, mkdirSync, writeFileSync, createReadStream } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createBot } from '@builderbot/bot'
@@ -138,6 +138,22 @@ const main = async () => {
     res.end(dashHtml)
   })
 
+  // Servir brochures vía HTTP (para Baileys sendMedia)
+  provider.server.get('/brochures/:file', async (req: unknown, res: { writeHead: (c: number, h: Record<string, string>) => void; end: (b: Buffer) => void }) => {
+    const r = req as Record<string, unknown>
+    const fileName = (r.url as string)?.split('/').pop() ?? ''
+    const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '')
+    const filePath = join(process.cwd(), 'public', 'brochures', safeName)
+    if (!existsSync(filePath)) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' })
+      return res.end(Buffer.from('Brochure no encontrado'))
+    }
+    const ext = safeName.split('.').pop()?.toLowerCase()
+    const mimeTypes: Record<string, string> = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg' }
+    res.writeHead(200, { 'Content-Type': mimeTypes[ext ?? ''] ?? 'application/octet-stream' })
+    res.end(readFileSync(filePath))
+  })
+
   provider.server.get('/api/dashboard/state', async (req: unknown, res: { writeHead: (c: number, h: Record<string, string>) => void; end: (s: string) => void }) => {
     if (!authGuard(req as { url?: string; headers?: Record<string, string> }, res)) return
     const ip = (req as Record<string, unknown>).socket ? ((req as Record<string, unknown>).socket as Record<string, unknown>).remoteAddress as string : 'unknown'
@@ -232,9 +248,13 @@ const main = async () => {
   setupReconnectHandler()
 
   // Inicializar RAG (carga modelo de embeddings + abre LanceDB)
-  rag.init().catch(err => {
+  // Debe ser await para que el bot no acepte mensajes antes de que RAG esté listo
+  try {
+    await rag.init()
+    log.info('RAG inicializado correctamente')
+  } catch (err) {
     log.warn('RAG no se pudo inicializar: %s', (err as Error)?.message ?? err)
-  })
+  }
 
   setProvider(provider)
   void resolvePendingLids().then(n => {

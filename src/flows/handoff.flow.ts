@@ -1,6 +1,12 @@
 import { addKeyword } from '@builderbot/bot'
 import { isOpen, outsideHoursMessage } from '../services/office-hours.js'
+import { leads } from '../services/store.js'
 import { rnd, splitResponse, delayBetween } from '../utils.js'
+
+function normalizePhoneForLookup(from: string): string {
+  const normalized = from.replace('@s.whatsapp.net', '')
+  return normalized.startsWith('51') ? normalized : `51${normalized}`
+}
 
 export const handoffFlow = addKeyword(['asesor', 'humano', 'hablar', 'contactar'])
   .addAction(async (ctx, { flowDynamic, gotoFlow, extensions }) => {
@@ -14,6 +20,23 @@ export const handoffFlow = addKeyword(['asesor', 'humano', 'hablar', 'contactar'
 
     if (isOpen()) {
       extensions.pipeline?.classifyAndSend(ctx.from, ctx.body ?? '', 'Solicita asesor en horario')
+
+      // Verificar si el usuario ya tiene datos registrados
+      const lookupPhone = normalizePhoneForLookup(ctx.from)
+      const existingLead = leads.getByPhone(lookupPhone)
+
+      if (existingLead && existingLead.email && existingLead.dni) {
+        // Ya registrado → mensaje de confirmación directo
+        const confirmMsg = extensions.templates?.pick('registration_done', ctx.from)
+          ?? 'Tus datos ya están registrados. Un asesor del CEE te contactará pronto. ¿Mientras tanto, algo más en lo que pueda ayudarte?'
+        if (hp) {
+          await hp.reply(ctx, flowDynamic, confirmMsg)
+        } else {
+          await flowDynamic([{ body: confirmMsg, delay: rnd() }])
+        }
+        return
+      }
+
       const urgency = extensions.urgencyDetector?.assess(ctx.body ?? '') ?? 'NINGUNA'
       const isUrgent = urgency === 'INMEDIATA' || urgency === 'ALTA'
       const handoffMsg = extensions.templates?.pick('handoff_description', ctx.from)
@@ -59,6 +82,14 @@ export const handoffFlow = addKeyword(['asesor', 'humano', 'hablar', 'contactar'
     }
 
     if (option === '1' || option?.toLowerCase() === 'sí' || option?.toLowerCase() === 'si') {
+      // Verificar lead existente antes de redirigir
+      const lookupPhone = normalizePhoneForLookup(ctx.from)
+      const existingLead = leads.getByPhone(lookupPhone)
+      if (existingLead && existingLead.email && existingLead.dni) {
+        const confirmMsg = extensions.templates?.pick('registration_done', ctx.from)
+          ?? 'Tus datos ya están registrados. Un asesor del CEE te contactará pronto.'
+        return endFlow(confirmMsg)
+      }
       const { leadCaptureFlow } = await import('./lead-capture.flow.js')
       return gotoFlow(leadCaptureFlow)
     }

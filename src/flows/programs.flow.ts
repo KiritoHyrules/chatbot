@@ -1,5 +1,4 @@
 import { addKeyword } from '@builderbot/bot'
-import { join } from 'node:path'
 import { programs } from '../data/programs.js'
 import { findAnswer } from '../data/knowledge.js'
 import { extractNumber } from '../services/number-extractor.js'
@@ -87,7 +86,9 @@ export const programsFlow = addKeyword(['programas', 'cursos', 'diplomados', 'pe
     await replyOrFallback(hp, ctx, flowDynamic, detail ?? program.description)
 
     if (program.brochureFile) {
-      await replyOrFallback(hp, ctx, flowDynamic, 'Aquí tienes el brochure.', { media: join(process.cwd(), 'public', 'brochures', program.brochureFile) })
+      const port = process.env.PORT ?? 3008
+      const brochureUrl = `http://localhost:${port}/brochures/${program.brochureFile}`
+      await replyOrFallback(hp, ctx, flowDynamic, 'Aquí tienes el brochure.', { media: brochureUrl })
     }
   })
   .addAction({ capture: true, idle: 120000 }, async (ctx, { gotoFlow, endFlow, fallBack, flowDynamic, state, extensions }) => {

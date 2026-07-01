@@ -23,3 +23,6 @@ Sí, el CEE ofrece descuentos corporativos para grupos de 3 o más personas de l
 
 ## ¿Incluyen prácticas o laboratorios?
 Todos los programas del CEE incluyen casos prácticos reales aplicados al contexto peruano. Los diplomados en Ciencia de Datos y los PEE en Ciberseguridad incluyen laboratorios especializados con herramientas profesionales. El curso de Power BI incluye ejercicios prácticos con datasets reales para que aprendas haciendo.
+
+## ¿Cuáles son las formas de pago?
+Aceptamos múltiples formas de pago para tu comodidad: *transferencia bancaria* (BCP, Interbank, BBVA), *Yape* y *Plin* para pagos rápidos, y *tarjeta de crédito o débito* a través de nuestra plataforma de pagos en línea. También ofrecemos la opción de *pago en cuotas* sin intereses con tarjeta de crédito. Contáctanos para recibir los datos de las cuentas bancarias o el enlace de pago.
