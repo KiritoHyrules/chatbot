@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "rag:ingest": "npx tsx scripts/ingest-all.ts"
   },
   "keywords": [],
   "dependencies": {

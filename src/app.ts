@@ -30,6 +30,7 @@ import { setProvider, resolvePendingLids, setupLidListener } from './services/li
 import { humanReply } from './services/human-presence.js'
 import { waitForBurst, dropAll } from './services/message-aggregator.js'
 import { setupReconnectHandler, getWhatsAppHealth } from './provider/index.js'
+import { rag } from './services/rag/index.js'
 
 // Estado global
 let draining = false
@@ -100,7 +101,7 @@ const main = async () => {
 
   const { httpServer, handleCtx } = await createBot(
     { flow, provider, database },
-    { extensions: { messageLog, pipeline, leadScorer, objectionDetector, urgencyDetector, tagEngine, templates, decision, moderation, metrics, intentRouter, conversationContext, humanPresence, aggregator: { waitForBurst } } }
+    { extensions: { messageLog, pipeline, leadScorer, objectionDetector, urgencyDetector, tagEngine, templates, decision, moderation, metrics, intentRouter, conversationContext, humanPresence, rag, aggregator: { waitForBurst } } }
   )
 
   // Health check enriquecido
@@ -119,7 +120,7 @@ const main = async () => {
       db: dbHealth,
       outbox: outboxMetrics,
       whatsapp: waHealth,
-      rag: { available: false },
+        rag: rag.getHealth(),
       cache: ctxCache,
       memory: {
         dedupSize: seenMessages.size,
@@ -155,7 +156,7 @@ const main = async () => {
         dbHealthy: dbHealth.healthy,
         draining,
         whatsapp: waHealth,
-        rag: { available: false },
+      rag: rag.getHealth(),
         outbox: outboxMetrics,
       },
     }))
@@ -230,6 +231,11 @@ const main = async () => {
   await initDb()
   setupReconnectHandler()
 
+  // Inicializar RAG (carga modelo de embeddings + abre LanceDB)
+  rag.init().catch(err => {
+    log.warn('RAG no se pudo inicializar: %s', (err as Error)?.message ?? err)
+  })
+
   setProvider(provider)
   void resolvePendingLids().then(n => {
     if (n > 0) log.info('%d LIDs resueltos en startup.', n)
@@ -281,6 +287,7 @@ process.on('uncaughtException', (err) => {
     draining = true
     stopOutboxWorker()
     stopBufferFlush()
+    rag.close()
     closeDb()
     process.exit(1)
   }
@@ -290,6 +297,7 @@ main().catch(err => {
   log.error('Error fatal: %s', err?.message ?? err)
   stopOutboxWorker()
   stopBufferFlush()
+  rag.close()
   closeDb()
   process.exit(1)
 })
