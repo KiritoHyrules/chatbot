@@ -1,0 +1,48 @@
+{
+  "name": "chatbot-cee-fiis-uni",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/app.js",
+  "type": "module",
+  "scripts": {
+    "start": "node ./dist/app.js",
+    "lint": "eslint . --no-ignore",
+    "dev": "tsx --env-file=.env.local src/app.ts",
+    "build": "npx rollup -c",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "keywords": [],
+  "dependencies": {
+    "@builderbot/bot": "1.4.2",
+    "@builderbot/database-json": "1.4.2",
+    "@builderbot/provider-baileys": "1.4.2",
+    "better-sqlite3": "^12.11.1",
+    "fuse.js": "^7.4.2",
+    "lru-cache": "^11.5.1",
+    "openai": "^4.73.0",
+    "pino": "^10.3.1",
+    "sql.js": "^1.14.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.0",
+    "@vitest/coverage-v8": "^4.1.9",
+    "eslint": "^9.0.0",
+    "eslint-plugin-builderbot": "latest",
+    "nodemon": "^3.1.11",
+    "rollup": "^4.10.0",
+    "rollup-plugin-typescript2": "^0.36.0",
+    "tsx": "^4.7.1",
+    "typescript": "^5.4.3",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^4.1.9"
+  },
+  "author": "",
+  "license": "ISC",
+  "overrides": {
+    "baileys": "7.0.0-rc13"
+  }
+}

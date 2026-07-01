@@ -1,0 +1,17 @@
+node_modules/
+dist/
+/data/
+/bot_sessions/
+/_sessions/
+*.log
+*.qr.png
+.env.local
+bot-*.txt
+coverage/
+core.class.log
+queue.class.log
+.agents/
+.claude/
+.opencode/
+skills-lock.json
+opencode.json
