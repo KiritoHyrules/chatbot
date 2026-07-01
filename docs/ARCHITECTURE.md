@@ -1,7 +1,7 @@
 # Arquitectura — Chatbot CEE-FIIS-UNI
 
-> **Grafo de código:** 12,153 nodos · 12,750 aristas · 12 clusters (Leiden)  
-> **Stack:** BuilderBot 1.4.2 + Baileys (WhatsApp) + Gemini 2.5 Flash + SQLite (sql.js)  
+> **Grafo de código:** 12,315 nodos · 12,941 aristas · 12 clusters (Leiden)  
+> **Stack:** BuilderBot 1.4.2 + Baileys (WhatsApp) + **RAG (LanceDB + Transformers.js)** + SQLite (sql.js)  
 > **Node.js:** 22.18.0 obligatorio (24 rompe Baileys, 20 sin binarios sql.js)
 
 ---
@@ -10,9 +10,10 @@
 
 | Síntoma | Dónde mirar primero |
 |---------|---------------------|
-| El bot no responde | `message-log.shouldRespond` → `store.run` → `ai.chat` |
+| El bot no responde | `message-log.shouldRespond` → `store.run` → `rag.retrieve` |
 | Lead no se guarda | `store.run` → `lead-id.normalizeLeadId` → `sqlite.saveDb` |
-| Respuesta repetida/robótica | `response-templates.get` (pool sin repetición) → `ai.chat` (Gemini caído) |
+| RAG no encuentra resultados | threshold muy alto en `retrieve.ts` → bajar a 0.65 |
+| RAG responde mal | documentos mal escritos → revisar `docs/cee/*.md` |
 | Dashboard no carga | `authGuard` → `store.getAll` → `checkRateLimit` |
 | Mensajes duplicados | `app.isDuplicate` (ventana 10s) → `message-aggregator.waitForBurst` |
 | El bot contesta fuera de horario | `office-hours.isOpen` → `handoff.flow` |
@@ -25,17 +26,18 @@
 
 | # | Cohesion | Responsabilidad | Funciones clave | Archivos |
 |---|----------|-----------------|-----------------|----------|
-| 5 | 0.60 | Store + migraciones | `run`, `getDb`, `saveDb`, `migrate001` | `store.ts`, `sqlite.ts`, `migrations/` |
-| 3 | 0.71 | Contexto + rate limiting | `get`, `set`, `waitForBurst`, `checkRateLimit` | `conversation-context.ts`, `message-aggregator.ts` |
-| 12 | 0.55 | Clasificación + búsqueda | `classify`, `findAnswerStatic`, `normalizeQuery` | `classifier.ts`, `knowledge.ts` |
-| 9 | 0.52 | LLM + Outbox | `chat`, `startOutboxWorker`, CRUD leads | `ai.ts`, `outbox.ts`, `store.ts` |
-| 2 | 0.43 | Leads + presencia humana | `normalizeLeadId`, `human`, `setName` | `lead-id.ts`, `message-log.ts`, `human-presence.ts` |
-| 4 | 0.45 | HTTP / Dashboard | `main`, `authGuard`, `healthCheck` | `app.ts`, `middleware/` |
-| 8 | 0.70 | Resiliencia LLM | `callWithRetry`, `track`, `recordFailure/Success` | `ai.ts`, `metrics.ts` |
-| 7 | 1.00 | Horario oficina (Lima UTC-5) | `isOpen`, `outsideHoursMessage`, `nextOpenTime` | `office-hours.ts` |
-| 0 | 0.80 | Operador humano | `humanReply`, `rnd`, `replyOrFallback` | `human-presence.ts`, `utils.ts` |
+| 59 | 0.82 | **RAG Pipeline** | `retrieveContext`, `initEmbedder`, `ingestDocument`, `getHealth` | `rag/`, `scripts/` |
+| 57 | 0.77 | Store + migraciones | `runSafe`, `startOutboxWorker`, `all`, `get` | `store.ts`, `sqlite.ts`, `migrations/` |
+| 40 | 0.70 | Contexto + rate limiting | `get`, `set`, `waitForBurst`, `cacheKey`, `setCache` | `conversation-context.ts`, `message-aggregator.ts` |
+| 0 | 0.62 | Leads + presencia humana | `normalizeLeadId`, `humanReply`, `handleContactUpdate` | `lead-id.ts`, `human-presence.ts`, `lid-resolver.ts` |
+| 5 | 0.48 | HTTP / Dashboard | `main`, `authGuard`, `healthCheck` | `app.ts`, `middleware/` |
+| 3 | 0.73 | Clasificación + búsqueda | `classify`, `findAnswerStatic`, `normalizeQuery` | `classifier.ts`, `knowledge.ts` |
+| 53 | 0.52 | DB + buffer | `run`, `reset`, `saveDb`, `startBufferFlush` | `store.ts` |
+| 42 | 0.64 | Shutdown + health | `shutdown`, `closeDb`, `tryBackupExistingDb`, `verifyDbHealth` | `sqlite.ts`, `app.ts` |
+| 2 | 1.00 | Horario oficina | `isOpen`, `outsideHoursMessage`, `nextOpenTime` | `office-hours.ts` |
+| 41 | 1.00 | Operador humano | `humanReply`, `rnd`, `replyOrFallback` | `human-presence.ts`, `utils.ts` |
 
-**Cluster de riesgo:** #2 (cohesión 0.43) — `normalizeLeadId`, `addMessage`, `handleContactUpdate`, `human`, `setName` están débilmente cohesionados. Si crece, considerar dividirlo.
+**Cluster de riesgo:** #59 (RAG) — cohesion 0.82, muy aislado. Si falla, los flows degradan a templates.
 
 ---
 
@@ -46,20 +48,21 @@
 | 1 | `main` | `src/app.ts` | Internal — orquestador, 21 destinos |
 | 2 | `findProgram` | `src/data/knowledge.ts` | Entry — búsqueda de programas |
 | 3 | `findAnswer` | `src/data/knowledge.ts` | Entry — búsqueda FAQ |
-| 4 | `ask` | `src/services/ai.ts` | Core — prompt único a Gemini |
-| 5 | `chat` | `src/services/ai.ts` | Core — chat multi-turno con Gemini |
-| 6 | `clearHistory` | `src/services/ai.ts` | Core — limpiar historial IA |
+| 4 | `initEmbedder` | `src/services/rag/embed.ts` | Core — carga modelo Transformers.js |
+| 5 | `retrieveContext` | `src/services/rag/retrieve.ts` | Core — búsqueda semántica |
+| 6 | `chunkText` | `src/services/rag/chunker.ts` | Core — divide documentos |
 | 7 | `classify` | `src/services/classifier.ts` | Core — 6 etapas pipeline |
-| 8 | `get` | `src/services/conversation-context.ts` | Core — leer contexto (fan_in=19) |
-| 9 | `set` | `src/services/conversation-context.ts` | Core — escribir contexto (fan_in=13) |
+| 8 | `get` | `src/services/conversation-context.ts` | Core — leer contexto |
+| 9 | `set` | `src/services/conversation-context.ts` | Core — escribir contexto |
 | 10 | `recordQuestion/Program/Hostility/Loop` | `src/services/conversation-context.ts` | Core — registrar eventos |
 | 11 | `initDb` | `src/database/sqlite.ts` | Core — crear tablas |
-| 12 | `getDb` | `src/database/sqlite.ts` | Core — obtener conexión (fan_in=13) |
-| 13 | `saveDb` | `src/database/sqlite.ts` | Core — persistir a disco (fan_in=9) |
+| 12 | `getDb` | `src/database/sqlite.ts` | Core — obtener conexión |
+| 13 | `saveDb` | `src/database/sqlite.ts` | Core — persistir a disco |
 | 14 | `closeDb` | `src/database/sqlite.ts` | Core — cerrar conexión |
 | 15 | `migrate001` | `src/database/migrations/001-normalize-lead-ids.ts` | Core |
 | 16 | `authGuard` | `src/middleware/auth.ts` | Entry — proteger dashboard |
 | 17 | `healthCheck` | `src/middleware/health.ts` | Entry — GET /health |
+| 18 | `ingestDocument` | `src/services/rag/ingest.ts` | Core — pipeline de carga |
 
 ---
 
@@ -269,60 +272,26 @@ El grafo de código solo captura imports y calls directos. Estas conexiones **no
 
 ## 13. Capa de resiliencia (v3.3)
 
-### Circuit breakers
-| Componente | Umbral | Ventana | Cooldown | Half-open |
-|-----------|--------|---------|----------|-----------|
-| Gemini (`ai.ts`) | 3 fallos | 60s | 60s | Si (prueba 1 request antes de reabrir) |
-| n8n (`outbox.ts`) | 3 fallos | 120s | 300s | No |
-| Rate limit por usuario | 3s entre mensajes mismo phone | - | - | - |
+### Sin LLM — RAG puro
+El bot ya no usa ningún LLM externo. Todas las respuestas provienen de:
+1. **KB estática** (`knowledge.ts`) — respuestas rápidas por keyword
+2. **RAG** (`src/services/rag/`) — búsqueda semántica en documentos
+3. **Templates** (`response-templates.ts`) — fallback conversacional
 
-### DB recovery (`sqlite.ts`)
-- `PRAGMA integrity_check` al iniciar
-- Si DB corrupta: renombrar a `cee.db.corrupt.{timestamp}`, restaurar desde `cee.db.bak`
-- Si backup también corrupto: crear BD nueva
-- Auto-save cada 10s con backup previo
-- `PRAGMA busy_timeout = 5000` para evitar deadlocks
+### Vector store local
+| Componente | Tecnología | Costo | ¿Se duerme? |
+|-----------|-----------|-------|-------------|
+| **Vector store** | LanceDB (`data/vectors.lance`) | Gratis | **Nunca** — es un archivo local |
+| **Embeddings** | Transformers.js (`all-MiniLM-L6-v2`) | Gratis | **Nunca** — corre en Node.js |
+| **Modelo** | 23 MB, 384 dims, multilingual | Gratis | — |
 
-### Write buffer (`store.ts`)
-- Si `db().run()` falla, las queries entran en un buffer en memoria
-- Flush cada 15s cuando la DB se recupera
-- `runSafe()` retorna `{ ok: boolean }` para operaciones críticas
+### Pipeline de respuesta (actualizado)
+```
+usuario → moderation → KB estática → keyword match → RAG → template fallback
+```
 
-### Cache LRU
-| Cache | TTL | Max items | Archivo |
-|-------|-----|-----------|---------|
-| Conversation context | 5 min | ilimitado | `conversation-context.ts` |
-| AI history | 30 min | 500 users | `ai.ts` |
-| Knowledge answers | 6 horas | 500 queries | `knowledge.ts` |
-| Dedup messages | 10s | ilimitado | `app.ts` |
-
-### Health check (`GET /health`)
-Responde 200 o 503 con:
-- `db.healthy` — integridad SQLite
-- `whatsapp.state` — conectado/desconectado/reintentos
-- `ai.circuitState` — closed/open/half-open + latencia p50/p95
-- `outbox.pending` — eventos pendientes + circuito n8n
-- `cache` — hits/misses + tamaño
-
-### Graceful shutdown
-1. `draining = true` → rechazar nuevos mensajes
-2. `dropAll()` → limpiar buffers de mensajes
-3. Esperar 3s → drenar mensajes en vuelo
-4. `stopOutboxWorker()` + `stopBufferFlush()`
-5. `verifyDbHealth()` → reporte final
-6. `closeDb()` → exit
-
-### Retry & backoff
-| Sistema | Estrategia |
-|---------|-----------|
-| Gemini | 429: 2s, 4s, 8s, 16s. 500: 1s, 2s, 4s. Network: 1s, 2s, 3s, 4s |
-| Outbox | 30s, 2min, 10min, 1h, 6h (5 intentos → failed) |
-| DB save | 1 reintento a 500ms |
-
-### Observabilidad
-- **Pino** structured logging con levels: debug/info/warn/error
-- `LOG_LEVEL` env var (default: debug en dev, info en prod)
-- Cada módulo tiene su propio child logger (`module: 'sqlite'`, `module: 'ai'`, etc.)
+### Graceful degradation
+Si RAG falla (modelo no cargado, LanceDB corrupto), el bot responde con templates pre-escritos. Nunca se queda sin respuesta.
 
 ---
 

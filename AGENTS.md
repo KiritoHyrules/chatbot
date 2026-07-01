@@ -21,10 +21,10 @@ npm test            # vitest run (201 tests, must pass)
 ## Env / setup
 
 - Env file is `.env.local` (NOT `.env`), loaded as `--env-file=.env.local`
-- Required vars: `GEMINI_API_KEY`, `DASHBOARD_SECRET`
+- Required vars: `DASHBOARD_SECRET`
 - If `DASHBOARD_SECRET` is missing, the bot auto-generates a UUID and saves it to `data/operator_token.txt`
-- The bot works without Gemini (falls back to templates + knowledge base)
 - Dashboard auth: pass `?token=<DASHBOARD_SECRET>` or `Authorization: Bearer <token>` header
+- RAG: run `npm run rag:ingest` to load documents into LanceDB before first use
 
 ## Node.js version
 
@@ -42,11 +42,13 @@ npm test            # vitest run (201 tests, must pass)
 
 - `createFlow([...])` array order matters — last flow whose keyword pattern matches wins
 - 7 flows: `cancel` → `welcome` → `programs` → `faq` → `handoff` → `leadCapture` → `media`
-- Extensions (services) are injected in `src/app.ts:97` as a flat object. New services go there.
-- Every flow calls `extensions.ai.chat(phone, message, context)` for Gemini-generated responses
+- Extensions (services) are injected in `src/app.ts` as a flat object. New services go there.
+- 3 flows use RAG (`faq`, `welcome`, `programs`) — `rag.retrieve()` + `rag.formatResponse()`
+- 3 flows use templates only (`cancel`, `handoff`, `lead-capture`)
 - When `mode === 'HUMAN'` for a phone, the bot skips auto-reply (checked via `messageLog.shouldRespond`)
 - Dashboard polls `/api/dashboard/state` — uses rate limiting (100 req/15min per IP)
 - Message dedup: 10s window by `phone:body_hash`
+- RAG uses LanceDB (local file) + Transformers.js (local embeddings) — 0 external APIs
 
 ## Persistence
 

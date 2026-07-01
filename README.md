@@ -2,12 +2,15 @@
 
 Chatbot de WhatsApp para el Centro de Especialización Ejecutiva de la FIIS-UNI.
 
+## Stack
+
+BuilderBot 1.4.2 + Baileys (WhatsApp) + **RAG (LanceDB + Transformers.js)** + SQLite
+
 ## Documentación
 
 - [Documentación completa para desarrolladores](docs/PROJECT.md)
 - [Reglas para agentes de IA](AGENTS.md)
-- [Developer A — Flujos e IA](DEVELOPER_A.md)
-- [Developer B — Servicios de inteligencia](DEVELOPER_B.md)
+- [Arquitectura del proyecto](docs/ARCHITECTURE.md)
 
 ## Requisitos
 
@@ -32,11 +35,26 @@ chmod +x start.sh
 
 El dashboard del operador está en `http://localhost:3008/dashboard`.
 
-## Configuración de IA (opcional)
+## RAG (búsqueda semántica)
 
-El bot funciona sin IA. Para activar respuestas con Gemini:
+El bot usa RAG local para responder preguntas sobre los programas del CEE. No necesita APIs externas.
 
-1. Obtén una API key gratis en https://aistudio.google.com/apikey
-2. Edita `.env.local` y pega tu key: `GEMINI_API_KEY=tu-key`
+### Primera vez
+```bash
+npm run rag:ingest
+```
 
-Sin API key, el bot usa respuestas predefinidas.
+Esto carga los documentos de `docs/cee/` en LanceDB y descarga el modelo de embeddings (23 MB, solo la primera vez).
+
+### Actualizar conocimiento
+Edita los archivos en `docs/cee/` y vuelve a ejecutar:
+```bash
+npm run rag:ingest
+```
+
+## Configuración
+
+Crea `.env.local` con:
+```
+DASHBOARD_SECRET=tu-secret
+```
